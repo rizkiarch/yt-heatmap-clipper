@@ -148,6 +148,26 @@ If your environment is ready, you should see green checkmarks like this:
 python run.py
 ```
 
+### Local Web Usage
+
+You can run the tool from a local website (browser UI):
+
+```bash
+python app.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5000
+```
+
+From the web UI you can:
+- Input YouTube URL
+- Select crop mode
+- Enable/disable auto subtitle
+- View process logs and generated files
+
 ### Interactive Workflow
 
 The script will guide you through an interactive setup:
@@ -253,9 +273,13 @@ WHISPER_MODEL = "tiny"    # Whisper model: tiny, base, small, medium, large
 ```text
 clips/
 ├── clip_1.mp4
+├── clip_1.srt
 ├── clip_2.mp4
+├── clip_2.srt
 └── clip_3.mp4
 ```
+
+When subtitle is enabled, raw subtitle `.srt` files are saved alongside clips.
 
 ---
 

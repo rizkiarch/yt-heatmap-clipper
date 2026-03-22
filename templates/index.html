@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YT Heatmap Clipper</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #17222f;
+      --muted: #5f6d7a;
+      --line: #d7dee8;
+      --accent: #0f766e;
+      --accent-2: #115e59;
+      --error: #b42318;
+      --ok: #067647;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(circle at top right, #dbeafe 0, transparent 40%),
+        radial-gradient(circle at bottom left, #ccfbf1 0, transparent 35%),
+        var(--bg);
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 32px auto;
+      padding: 0 16px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 10px 28px rgba(20, 41, 61, 0.06);
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 4px;
+      font-size: 1.6rem;
+    }
+
+    .hint {
+      color: var(--muted);
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+
+    label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 6px;
+      margin-top: 14px;
+    }
+
+    input[type="text"], select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      background: #fff;
+    }
+
+    .check {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    }
+
+    .box {
+      margin-top: 14px;
+      border-radius: 10px;
+      padding: 10px 12px;
+      border: 1px solid;
+    }
+
+    .box.error {
+      color: var(--error);
+      border-color: #f7b5ae;
+      background: #fff1f0;
+    }
+
+    .box.ok {
+      color: var(--ok);
+      border-color: #a8e8c8;
+      background: #ecfdf3;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 380px;
+      overflow: auto;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.85rem;
+      border: 1px solid #1e293b;
+    }
+
+    ul {
+      margin: 6px 0 0;
+      padding-left: 18px;
+    }
+
+    a {
+      color: #0f4c81;
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="panel">
+      <h1>YT Heatmap Clipper (Local Web)</h1>
+      <p class="hint">Run clip extraction from browser on your local machine.</p>
+
+      <form method="post">
+        <label for="url">YouTube URL</label>
+        <input
+          id="url"
+          name="url"
+          type="text"
+          placeholder="https://www.youtube.com/watch?v=..."
+          value="{{ data.url }}"
+          required
+        >
+
+        <label for="crop_mode">Crop Mode</label>
+        <select id="crop_mode" name="crop_mode">
+          <option value="default" {% if data.crop_mode == 'default' %}selected{% endif %}>Default (center crop)</option>
+          <option value="split_left" {% if data.crop_mode == 'split_left' %}selected{% endif %}>Split 1 (bottom-left facecam)</option>
+          <option value="split_right" {% if data.crop_mode == 'split_right' %}selected{% endif %}>Split 2 (bottom-right facecam)</option>
+        </select>
+
+        <label class="check">
+          <input type="checkbox" name="use_subtitle" {% if data.use_subtitle %}checked{% endif %}>
+          Enable auto subtitle (Faster-Whisper)
+        </label>
+
+        <div class="actions">
+          <button type="submit">Process Video</button>
+        </div>
+      </form>
+
+      {% if error %}
+      <div class="box error">{{ error }}</div>
+      {% endif %}
+
+      {% if success %}
+      <div class="box ok">{{ success }}</div>
+      {% endif %}
+
+      {% if files %}
+      <div class="box">
+        <strong>Generated files</strong>
+        <ul>
+          {% for f in files %}
+          <li><a href="{{ url_for('serve_clip', filename=f) }}" target="_blank">{{ f }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if logs %}
+      <div class="box">
+        <strong>Process logs</strong>
+        <pre>{{ logs }}</pre>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

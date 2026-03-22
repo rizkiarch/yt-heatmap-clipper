@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 
 OUTPUT_DIR = "clips"      # Directory where generated clips will be saved
 MAX_DURATION = 160         # Maximum duration (in seconds) for each clip
+MIN_DURATION = 90          # Minimum duration (in seconds) for each clip
 MIN_SCORE = 0.40          # Minimum heatmap intensity score to be considered viral
 MAX_CLIPS = 10           # Maximum number of clips to generate per video
 MAX_WORKERS = 1           # Number of parallel workers (reserved for future concurrency)
@@ -19,6 +20,18 @@ TOP_HEIGHT = 960          # Height for top section (center content) in split mod
 BOTTOM_HEIGHT = 320       # Height for bottom section (facecam) in split mode (Total: 1280px)
 USE_SUBTITLE = True       # Enable auto subtitle using Faster-Whisper (4-5x faster)
 WHISPER_MODEL = "large-v3"   # Whisper model size: tiny, base, small, medium, large-v3
+SAVE_RAW_SUBTITLE = True  # Save generated .srt subtitle file alongside output clip
+
+
+def clamp_clip_duration(seconds):
+    """
+    Clamp clip duration using configurable MIN_DURATION and MAX_DURATION.
+    """
+    max_dur = max(1.0, float(MAX_DURATION))
+    min_dur = max(1.0, float(MIN_DURATION))
+    if min_dur > max_dur:
+        min_dur = max_dur
+    return min(max(float(seconds), min_dur), max_dur)
 
 def extract_video_id(url):
     """
@@ -55,16 +68,17 @@ def get_model_size(model):
     return sizes.get(model, "unknown size")
 
 
-def cek_dependensi(install_whisper=False):
+def cek_dependensi(install_whisper=False, update_ytdlp=True):
     """
     Ensure required dependencies are available.
     Automatically updates yt-dlp and checks FFmpeg availability.
     """
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
+    if update_ytdlp:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
 
     if install_whisper:
         # Check if faster-whisper package is installed
@@ -238,10 +252,7 @@ def ambil_most_replayed(video_id):
             if score >= MIN_SCORE:
                 results.append({
                     "start": float(marker["startMillis"]) / 1000,
-                    "duration": min(
-                        float(marker["durationMillis"]) / 1000,
-                        MAX_DURATION
-                    ),
+                    "duration": clamp_clip_duration(float(marker["durationMillis"]) / 1000),
                     "score": score
                 })
         except Exception:
@@ -255,7 +266,7 @@ def ambil_most_replayed(video_id):
                 score = float(marker.get("intensityScoreNormalized", 0))
                 fallback_candidates.append({
                     "start": float(marker["startMillis"]) / 1000,
-                    "duration": min(float(marker["durationMillis"]) / 1000, MAX_DURATION),
+                    "duration": clamp_clip_duration(float(marker["durationMillis"]) / 1000),
                     "score": score,
                 })
             except Exception:
@@ -307,6 +318,7 @@ def ambil_fallback_segments(video_id, total_duration):
                 start = float(point.get("start_time", 0))
                 end = float(point.get("end_time", start))
                 duration = min(max(3.0, end - start), MAX_DURATION)
+                duration = clamp_clip_duration(duration)
                 score = float(point.get("value", 0))
                 heatmap_results.append({
                     "start": start,
@@ -329,6 +341,7 @@ def ambil_fallback_segments(video_id, total_duration):
                 start = float(chapter.get("start_time", 0))
                 end = float(chapter.get("end_time", start))
                 duration = min(max(3.0, end - start), MAX_DURATION)
+                duration = clamp_clip_duration(duration)
                 chapter_results.append({
                     "start": start,
                     "duration": duration,
@@ -354,7 +367,7 @@ def ambil_fallback_segments(video_id, total_duration):
         if start >= total_duration:
             break
 
-        duration = min(MAX_DURATION, max(20, step // 2))
+        duration = clamp_clip_duration(max(20, step // 2))
         interval_results.append({
             "start": float(start),
             "duration": float(duration),
@@ -456,6 +469,32 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
     start = max(0, start_original - PADDING)
     end = min(end_original + PADDING, total_duration)
 
+    # Ensure resulting clip is at least MIN_DURATION when timeline allows.
+    min_dur = max(1.0, float(MIN_DURATION))
+    max_dur = max(1.0, float(MAX_DURATION))
+    if min_dur > max_dur:
+        min_dur = max_dur
+
+    current_len = end - start
+    if current_len < min_dur:
+        need = min_dur - current_len
+        extend_before = min(start, need / 2)
+        start -= extend_before
+        need -= extend_before
+
+        extend_after = min(total_duration - end, need)
+        end += extend_after
+        need -= extend_after
+
+        if need > 0:
+            extra_before = min(start, need)
+            start -= extra_before
+            need -= extra_before
+
+        if need > 0:
+            extra_after = min(total_duration - end, need)
+            end += extra_after
+
     if end - start < 3:
         return False
 
@@ -463,6 +502,7 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
     cropped_file = f"temp_cropped_{index}.mp4"
     subtitle_file = f"temp_{index}.srt"
     output_file = os.path.join(OUTPUT_DIR, f"clip_{index}.mp4")
+    raw_subtitle_output = os.path.join(OUTPUT_DIR, f"clip_{index}.srt")
 
     print(
         f"[Clip {index}] Processing segment "
@@ -563,6 +603,14 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
         if use_subtitle:
             print("  Generating subtitle...")
             if generate_subtitle(cropped_file, subtitle_file):
+                if SAVE_RAW_SUBTITLE and os.path.exists(subtitle_file):
+                    try:
+                        # Keep a permanent raw subtitle copy before burn step.
+                        shutil.copy2(subtitle_file, raw_subtitle_output)
+                        print(f"  Raw subtitle saved: {raw_subtitle_output}")
+                    except Exception as copy_error:
+                        print(f"  Failed to save raw subtitle: {str(copy_error)}")
+
                 print("  Burning subtitle to video...")
                 # Get absolute path for subtitle file
                 abs_subtitle_path = os.path.abspath(subtitle_file)
@@ -579,16 +627,23 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
                     output_file
                 ]
                 
-                result = subprocess.run(
-                    cmd_subtitle,
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                
-                os.remove(cropped_file)
-                os.remove(subtitle_file)
+                try:
+                    result = subprocess.run(
+                        cmd_subtitle,
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+
+                    os.remove(cropped_file)
+                except subprocess.CalledProcessError:
+                    # If subtitle burning fails, keep processing with video only.
+                    print("  Failed to burn subtitle, continuing with non-burned video...")
+                    os.rename(cropped_file, output_file)
+
+                if os.path.exists(subtitle_file):
+                    os.remove(subtitle_file)
             else:
                 # If subtitle generation failed, use cropped file as output
                 print("  Subtitle generation failed, continuing without subtitle...")
@@ -696,6 +751,7 @@ def main():
         f"Processing clips with {PADDING}s pre-padding "
         f"and {PADDING}s post-padding."
     )
+    print(f"Clip duration target: min {MIN_DURATION}s, max {MAX_DURATION}s")
     print(f"Using crop mode: {crop_desc}")
 
     success_count = 0
