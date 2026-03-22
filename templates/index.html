@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,7 +18,9 @@
       --ok: #067647;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -62,7 +65,8 @@
       margin-top: 14px;
     }
 
-    input[type="text"], select {
+    input[type="text"],
+    select {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -138,9 +142,12 @@
       text-decoration: none;
     }
 
-    a:hover { text-decoration: underline; }
+    a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
+
 <body>
   <main class="wrap">
     <section class="panel">
@@ -149,20 +156,16 @@
 
       <form method="post">
         <label for="url">YouTube URL</label>
-        <input
-          id="url"
-          name="url"
-          type="text"
-          placeholder="https://www.youtube.com/watch?v=..."
-          value="{{ data.url }}"
-          required
-        >
+        <input id="url" name="url" type="text" placeholder="https://www.youtube.com/watch?v=..." value="{{ data.url }}"
+          required>
 
         <label for="crop_mode">Crop Mode</label>
         <select id="crop_mode" name="crop_mode">
-          <option value="default" {% if data.crop_mode == 'default' %}selected{% endif %}>Default (center crop)</option>
-          <option value="split_left" {% if data.crop_mode == 'split_left' %}selected{% endif %}>Split 1 (bottom-left facecam)</option>
-          <option value="split_right" {% if data.crop_mode == 'split_right' %}selected{% endif %}>Split 2 (bottom-right facecam)</option>
+          <option value="default" {% if data.crop_mode=='default' %}selected{% endif %}>Default (center crop)</option>
+          <option value="split_left" {% if data.crop_mode=='split_left' %}selected{% endif %}>Split 1 (bottom-left
+            facecam)</option>
+          <option value="split_right" {% if data.crop_mode=='split_right' %}selected{% endif %}>Split 2 (bottom-right
+            facecam)</option>
         </select>
 
         <label class="check">
@@ -203,4 +206,5 @@
     </section>
   </main>
 </body>
+
 </html>
