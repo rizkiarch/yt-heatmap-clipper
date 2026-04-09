@@ -60,3 +60,6 @@ models/
 test.py
 debug_*.py
 clips/
+temp_*.mp4
+temp_*.srt
+temp_cropped_*.mp4

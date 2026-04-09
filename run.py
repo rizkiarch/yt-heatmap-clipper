@@ -11,9 +11,9 @@ warnings.filterwarnings("ignore")
 
 OUTPUT_DIR = "clips"      # Directory where generated clips will be saved
 MAX_DURATION = 160         # Maximum duration (in seconds) for each clip
-MIN_DURATION = 90          # Minimum duration (in seconds) for each clip
-MIN_SCORE = 0.40          # Minimum heatmap intensity score to be considered viral
-MAX_CLIPS = 10           # Maximum number of clips to generate per video
+MIN_DURATION = 60          # Minimum duration (in seconds) for each clip
+MIN_SCORE = 0.30          # Minimum heatmap intensity score to be considered viral
+MAX_CLIPS = 21           # Maximum number of clips to generate per video
 MAX_WORKERS = 1           # Number of parallel workers (reserved for future concurrency)
 PADDING = 10              # Extra seconds added before and after each detected segment
 TOP_HEIGHT = 960          # Height for top section (center content) in split mode
@@ -21,6 +21,7 @@ BOTTOM_HEIGHT = 320       # Height for bottom section (facecam) in split mode (T
 USE_SUBTITLE = True       # Enable auto subtitle using Faster-Whisper (4-5x faster)
 WHISPER_MODEL = "large-v3"   # Whisper model size: tiny, base, small, medium, large-v3
 SAVE_RAW_SUBTITLE = True  # Save generated .srt subtitle file alongside output clip
+SOURCE_TAG_DEFAULT_INTERVAL = 30.0  # Seconds between each source tag animation cycle
 
 
 def clamp_clip_duration(seconds):
@@ -292,7 +293,7 @@ def ambil_most_replayed(video_id):
     return results
 
 
-def ambil_fallback_segments(video_id, total_duration):
+def ambil_fallback_segments(video_id, total_duration, metadata=None):
     """
     Build fallback segments when Most Replayed heatmap is unavailable.
     Priority: yt-dlp heatmap -> chapters -> evenly spaced timeline slices.
@@ -301,13 +302,8 @@ def ambil_fallback_segments(video_id, total_duration):
     print("Trying fallback segment strategies...")
 
     # Strategy 1 and 2: pull metadata once via yt-dlp.
-    metadata = None
-    try:
-        cmd = [sys.executable, "-m", "yt_dlp", "--no-playlist", "-J", url]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        metadata = json.loads(res.stdout)
-    except Exception:
-        metadata = None
+    if metadata is None:
+        metadata = get_video_metadata(video_id)
 
     if metadata:
         # Strategy 1: yt-dlp heatmap (when available).
@@ -409,6 +405,126 @@ def get_duration(video_id):
     return 3600
 
 
+def get_video_metadata(video_id):
+    """
+    Retrieve yt-dlp JSON metadata once so it can be reused.
+    """
+    cmd = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        "--no-playlist",
+        "--skip-download",
+        "-J",
+        f"https://youtu.be/{video_id}"
+    ]
+
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return json.loads(res.stdout)
+    except Exception:
+        return None
+
+
+def get_duration_from_metadata(metadata):
+    """
+    Retrieve total duration from yt-dlp metadata when available.
+    """
+    if not isinstance(metadata, dict):
+        return None
+
+    value = metadata.get("duration")
+    if isinstance(value, (int, float)) and value > 0:
+        return int(value)
+
+    return None
+
+
+def get_channel_name(video_id):
+    """
+    Retrieve channel/uploader name from YouTube metadata.
+    """
+    cmd = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        "--no-playlist",
+        "--skip-download",
+        "-J",
+        f"https://youtu.be/{video_id}"
+    ]
+
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(res.stdout)
+        return (
+            data.get("channel")
+            or data.get("uploader")
+            or data.get("uploader_id")
+            or "Unknown Channel"
+        )
+    except Exception:
+        return "Unknown Channel"
+
+
+def get_channel_name_from_metadata(metadata):
+    """
+    Retrieve channel/uploader name from yt-dlp metadata.
+    """
+    if not isinstance(metadata, dict):
+        return "Unknown Channel"
+
+    return (
+        metadata.get("channel")
+        or metadata.get("uploader")
+        or metadata.get("uploader_id")
+        or "Unknown Channel"
+    )
+
+
+def _escape_drawtext_text(text):
+    """
+    Escape text for FFmpeg drawtext filter.
+    """
+    if text is None:
+        return ""
+
+    escaped = str(text)
+    escaped = escaped.replace("\\", "\\\\")
+    escaped = escaped.replace(":", "\\:")
+    escaped = escaped.replace("'", "\\'")
+    escaped = escaped.replace("%", "\\%")
+    return escaped
+
+
+def build_source_tag_filter(channel_name, interval_seconds):
+    """
+    Build FFmpeg filter that shows animated source tag on top-left.
+    """
+    interval = max(4.0, float(interval_seconds))
+    channel = _escape_drawtext_text(channel_name)
+
+    # Smooth slide-in/slide-out timing per cycle:
+    # 0.00-0.42s in, 0.42-2.40s hold, 2.40-2.82s out.
+    x_expr = (
+        f"if(lt(mod(t\\,{interval:.2f})\\,0.42)\\,"
+        f"-440+464*sin((mod(t\\,{interval:.2f})/0.42)*PI/2)\\,"
+        f"if(lt(mod(t\\,{interval:.2f})\\,2.40)\\,24\\,"
+        f"if(lt(mod(t\\,{interval:.2f})\\,2.82)\\,"
+        f"24-464*sin(((mod(t\\,{interval:.2f})-2.40)/0.42)*PI/2)\\,-440)))"
+    )
+
+    return (
+        "format=yuv420p,"
+        f"drawbox=x='{x_expr}':y=56:w=5:h=70:color=red@0.95:t=fill,"
+        f"drawbox=x='{x_expr}+10':y=52:w=425:h=78:color=black@0.42:t=fill,"
+        f"drawbox=x='{x_expr}+24':y=74:w=32:h=32:color=red@0.95:t=fill,"
+        f"drawtext=text='>':x='{x_expr}+35':y=78:fontsize=24:fontcolor=white,"
+        f"drawtext=text='YouTube':x='{x_expr}+66':y=79:fontsize=18:fontcolor=white,"
+        f"drawtext=text='Source\\: {channel}':x='{x_expr}+24':y=108:fontsize=20:fontcolor=white"
+    )
+
+
 def generate_subtitle(video_file, subtitle_file):
     """
     Generate subtitle file using Faster-Whisper for the given video.
@@ -454,14 +570,27 @@ def format_timestamp(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default", use_subtitle=False):
+def proses_satu_clip(
+    video_id,
+    item,
+    index,
+    total_duration,
+    crop_mode="default",
+    use_subtitle=False,
+    use_source_tag=False,
+    source_channel="Unknown Channel",
+    source_interval=SOURCE_TAG_DEFAULT_INTERVAL
+):
     """
     Download, crop, and export a single vertical clip
     based on a heatmap segment.
     
     Args:
-        crop_mode: "default", "split_left", or "split_right"
+        crop_mode: "default", "split_left", "split_right", or "blur_center"
         use_subtitle: whether to generate and burn subtitle
+        use_source_tag: whether to add animated source tag overlay
+        source_channel: channel name used in source tag
+        source_interval: seconds between source tag animations
     """
     start_original = item["start"]
     end_original = item["start"] + item["duration"]
@@ -500,6 +629,7 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
 
     temp_file = f"temp_{index}.mp4"
     cropped_file = f"temp_cropped_{index}.mp4"
+    source_file = f"temp_source_{index}.mp4"
     subtitle_file = f"temp_{index}.srt"
     output_file = os.path.join(OUTPUT_DIR, f"clip_{index}.mp4")
     raw_subtitle_output = os.path.join(OUTPUT_DIR, f"clip_{index}.srt")
@@ -587,6 +717,23 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
                 "-c:a", "aac", "-b:a", "128k",
                 cropped_file
             ]
+        elif crop_mode == "blur_center":
+            # Keep the original 16:9 frame in the middle and fill top/bottom with blurred video.
+            vf = (
+                "[0:v]scale=720:1280:force_original_aspect_ratio=increase,"
+                "crop=720:1280,boxblur=20:10[bg];"
+                "[0:v]setsar=1,scale=720:405[fg];"
+                "[bg][fg]overlay=0:(H-h)/2[out]"
+            )
+            cmd_crop = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", temp_file,
+                "-filter_complex", vf,
+                "-map", "[out]", "-map", "0:a?",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:a", "aac", "-b:a", "128k",
+                cropped_file
+            ]
 
         print("  Cropping video...")
         result = subprocess.run(
@@ -599,10 +746,35 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
 
         os.remove(temp_file)
 
+        final_input_file = cropped_file
+
+        if use_source_tag:
+            print("  Adding animated source tag...")
+            source_filter = build_source_tag_filter(source_channel, source_interval)
+            cmd_source = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", cropped_file,
+                "-vf", source_filter,
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:a", "copy",
+                source_file
+            ]
+
+            result = subprocess.run(
+                cmd_source,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            os.remove(cropped_file)
+            final_input_file = source_file
+
         # Generate and burn subtitle if enabled
         if use_subtitle:
             print("  Generating subtitle...")
-            if generate_subtitle(cropped_file, subtitle_file):
+            if generate_subtitle(final_input_file, subtitle_file):
                 if SAVE_RAW_SUBTITLE and os.path.exists(subtitle_file):
                     try:
                         # Keep a permanent raw subtitle copy before burn step.
@@ -619,7 +791,7 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
                 
                 cmd_subtitle = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", cropped_file,
+                    "-i", final_input_file,
                     "-vf", f"subtitles='{subtitle_path}':force_style='FontName=Arial,FontSize=12,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=40'",
                     # "-vf", f"subtitles='{subtitle_path}':force_style='FontName=Arial,FontSize=12,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=100'",
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
@@ -636,28 +808,28 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
                         text=True
                     )
 
-                    os.remove(cropped_file)
+                    os.remove(final_input_file)
                 except subprocess.CalledProcessError:
                     # If subtitle burning fails, keep processing with video only.
                     print("  Failed to burn subtitle, continuing with non-burned video...")
-                    os.rename(cropped_file, output_file)
+                    os.rename(final_input_file, output_file)
 
                 if os.path.exists(subtitle_file):
                     os.remove(subtitle_file)
             else:
                 # If subtitle generation failed, use cropped file as output
                 print("  Subtitle generation failed, continuing without subtitle...")
-                os.rename(cropped_file, output_file)
+                os.rename(final_input_file, output_file)
         else:
             # No subtitle, rename cropped file to output
-            os.rename(cropped_file, output_file)
+            os.rename(final_input_file, output_file)
 
         print("Clip successfully generated.")
         return True
 
     except subprocess.CalledProcessError as e:
         # Cleanup temp files
-        for f in [temp_file, cropped_file, subtitle_file]:
+        for f in [temp_file, cropped_file, source_file, subtitle_file]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -669,7 +841,7 @@ def proses_satu_clip(video_id, item, index, total_duration, crop_mode="default",
         return False
     except Exception as e:
         # Cleanup temp files
-        for f in [temp_file, cropped_file, subtitle_file]:
+        for f in [temp_file, cropped_file, source_file, subtitle_file]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -689,10 +861,11 @@ def main():
     print("\n=== Crop Mode ===")
     print("1. Default (center crop)")
     print("2. Split 1 (top: center, bottom: bottom-left (facecam))")
-    print("3. Split 2 (top: center, bottom: bottom-right ((facecam))")
+    print("3. Split 2 (top: center, bottom: bottom-right (facecam))")
+    print("4. Blur Center (16:9 di tengah, atas-bawah blur)")
     
     while True:
-        choice = input("\nSelect crop mode (1-3): ").strip()
+        choice = input("\nSelect crop mode (1-4): ").strip()
         if choice == "1":
             crop_mode = "default"
             crop_desc = "Default center crop"
@@ -705,10 +878,34 @@ def main():
             crop_mode = "split_right"
             crop_desc = "Split crop (bottom-right facecam)"
             break
+        elif choice == "4":
+            crop_mode = "blur_center"
+            crop_desc = "Blur center (16:9 center with blurred top/bottom)"
+            break
         else:
-            print("Invalid choice. Please enter 1, 2, or 3.")
+            print("Invalid choice. Please enter 1, 2, 3, or 4.")
     
     print(f"Selected: {crop_desc}")
+
+    # Ask for source tag overlay
+    print("\n=== Source Tag Overlay ===")
+    source_choice = input("Show animated source label (YouTube + channel) ? (y/n): ").strip().lower()
+    use_source_tag = source_choice in ["y", "yes"]
+    source_interval = SOURCE_TAG_DEFAULT_INTERVAL
+
+    if use_source_tag:
+        interval_input = input(
+            f"Animation interval in seconds (default {SOURCE_TAG_DEFAULT_INTERVAL:.0f}): "
+        ).strip()
+        if interval_input:
+            try:
+                source_interval = max(4.0, float(interval_input))
+            except ValueError:
+                source_interval = SOURCE_TAG_DEFAULT_INTERVAL
+
+        print(f"✅ Source tag enabled (interval: {source_interval:.1f}s)")
+    else:
+        print("❌ Source tag disabled")
     
     # Ask for subtitle
     print("\n=== Auto Subtitle ===")
@@ -733,11 +930,22 @@ def main():
         print("Invalid YouTube link.")
         return
 
-    total_duration = get_duration(video_id)
+    print("Reading video metadata...")
+    metadata = get_video_metadata(video_id)
+
+    source_channel = "Unknown Channel"
+    if use_source_tag:
+        source_channel = get_channel_name_from_metadata(metadata)
+        if source_channel == "Unknown Channel":
+            print("Channel metadata incomplete, trying fallback lookup...")
+            source_channel = get_channel_name(video_id)
+        print(f"Source label channel: {source_channel}")
+
+    total_duration = get_duration_from_metadata(metadata) or get_duration(video_id)
     heatmap_data = ambil_most_replayed(video_id)
 
     if not heatmap_data:
-        heatmap_data = ambil_fallback_segments(video_id, total_duration)
+        heatmap_data = ambil_fallback_segments(video_id, total_duration, metadata)
 
     if not heatmap_data:
         print("No high-engagement segments found and fallback also failed.")
@@ -766,7 +974,10 @@ def main():
             success_count + 1,
             total_duration,
             crop_mode,
-            use_subtitle
+            use_subtitle,
+            use_source_tag,
+            source_channel,
+            source_interval
         ):
             success_count += 1
 
