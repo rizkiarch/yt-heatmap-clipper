@@ -13,7 +13,7 @@ OUTPUT_DIR = "clips"      # Directory where generated clips will be saved
 MAX_DURATION = 160         # Maximum duration (in seconds) for each clip
 MIN_DURATION = 60          # Minimum duration (in seconds) for each clip
 MIN_SCORE = 0.30          # Minimum heatmap intensity score to be considered viral
-MAX_CLIPS = 21           # Maximum number of clips to generate per video
+MAX_CLIPS = 1           # Maximum number of clips to generate per video
 MAX_WORKERS = 1           # Number of parallel workers (reserved for future concurrency)
 PADDING = 10              # Extra seconds added before and after each detected segment
 TOP_HEIGHT = 960          # Height for top section (center content) in split mode
@@ -22,6 +22,90 @@ USE_SUBTITLE = True       # Enable auto subtitle using Faster-Whisper (4-5x fast
 WHISPER_MODEL = "large-v3"   # Whisper model size: tiny, base, small, medium, large-v3
 SAVE_RAW_SUBTITLE = True  # Save generated .srt subtitle file alongside output clip
 SOURCE_TAG_DEFAULT_INTERVAL = 30.0  # Seconds between each source tag animation cycle
+
+# --- Subtitle Style Presets ---
+# Each preset maps to an FFmpeg `force_style` string for the subtitles filter.
+SUBTITLE_STYLES = {
+    "modern": (
+        "FontName=Arial,FontSize=14,Bold=1,"
+        "PrimaryColour=&HFFFFFF,OutlineColour=&H40000000,"
+        "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=50"
+    ),
+    "karaoke": (
+        "FontName=Arial,FontSize=16,Bold=1,"
+        "PrimaryColour=&H00FFFF,OutlineColour=&H000000,"
+        "BorderStyle=1,Outline=3,Shadow=0,Alignment=2,MarginV=50"
+    ),
+    "minimal": (
+        "FontName=Arial,FontSize=11,Bold=0,"
+        "PrimaryColour=&HFFFFFF,OutlineColour=&H80000000,"
+        "BorderStyle=1,Outline=1,Shadow=1,Alignment=1,MarginV=30,MarginL=20"
+    ),
+    "bold": (
+        "FontName=Impact,FontSize=20,Bold=1,"
+        "PrimaryColour=&HFFFFFF,OutlineColour=&H000000,"
+        "BorderStyle=1,Outline=4,Shadow=2,Alignment=2,MarginV=55"
+    ),
+    "neon": (
+        "FontName=Arial,FontSize=14,Bold=1,"
+        "PrimaryColour=&H00FF88,OutlineColour=&HFF00AA,"
+        "BorderStyle=1,Outline=3,Shadow=2,ShadowColour=&H80FF00FF,"
+        "Alignment=2,MarginV=50"
+    ),
+}
+
+# --- Source Tag Style Presets ---
+# Each preset is a callable builder or a key used in build_source_tag_filter.
+SOURCE_TAG_STYLES = {
+    "classic": {
+        "box_color": "black@0.42",
+        "accent_color": "red@0.95",
+        "text_color": "white",
+        "accent_icon": ">",
+    },
+    "glass": {
+        "box_color": "white@0.15",
+        "accent_color": "white@0.6",
+        "text_color": "white",
+        "accent_icon": "▶",
+    },
+    "minimal": {
+        "box_color": None,  # No background box
+        "accent_color": None,
+        "text_color": "white",
+        "accent_icon": "",
+    },
+    "neon": {
+        "box_color": "black@0.55",
+        "accent_color": "0x00FF88@0.95",
+        "text_color": "0x00FF88",
+        "accent_icon": "▶",
+    },
+}
+
+# --- Video Quality Presets ---
+VIDEO_QUALITY_PRESETS = {
+    "high": {"resolution": 1080, "crf": 18, "preset": "slow", "label": "High (1080p)"},
+    "medium": {"resolution": 720, "crf": 23, "preset": "medium", "label": "Medium (720p)"},
+    "fast": {"resolution": 720, "crf": 28, "preset": "ultrafast", "label": "Fast (720p)"},
+}
+
+
+def sanitize_filename(title):
+    """
+    Sanitize a YouTube video title for use as a filename.
+    Removes special characters, limits length, and normalizes whitespace.
+    """
+    if not title:
+        return "clip"
+    # Remove characters not allowed in filenames
+    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', title)
+    # Collapse whitespace
+    sanitized = re.sub(r'\s+', ' ', sanitized).strip()
+    # Limit length
+    if len(sanitized) > 80:
+        sanitized = sanitized[:80].rsplit(' ', 1)[0]
+    return sanitized or "clip"
 
 
 def clamp_clip_duration(seconds):
@@ -497,12 +581,19 @@ def _escape_drawtext_text(text):
     return escaped
 
 
-def build_source_tag_filter(channel_name, interval_seconds):
+def build_source_tag_filter(channel_name, interval_seconds, style="classic"):
     """
     Build FFmpeg filter that shows animated source tag on top-left.
+    Supports style presets: classic, glass, minimal, neon.
     """
     interval = max(4.0, float(interval_seconds))
     channel = _escape_drawtext_text(channel_name)
+
+    preset = SOURCE_TAG_STYLES.get(style, SOURCE_TAG_STYLES["classic"])
+    box_color = preset["box_color"]
+    accent_color = preset["accent_color"]
+    text_color = preset["text_color"]
+    accent_icon = preset.get("accent_icon", ">")
 
     # Smooth slide-in/slide-out timing per cycle:
     # 0.00-0.42s in, 0.42-2.40s hold, 2.40-2.82s out.
@@ -514,15 +605,42 @@ def build_source_tag_filter(channel_name, interval_seconds):
         f"24-464*sin(((mod(t\\,{interval:.2f})-2.40)/0.42)*PI/2)\\,-440)))"
     )
 
-    return (
-        "format=yuv420p,"
-        f"drawbox=x='{x_expr}':y=56:w=5:h=70:color=red@0.95:t=fill,"
-        f"drawbox=x='{x_expr}+10':y=52:w=425:h=78:color=black@0.42:t=fill,"
-        f"drawbox=x='{x_expr}+24':y=74:w=32:h=32:color=red@0.95:t=fill,"
-        f"drawtext=text='>':x='{x_expr}+35':y=78:fontsize=24:fontcolor=white,"
-        f"drawtext=text='YouTube':x='{x_expr}+66':y=79:fontsize=18:fontcolor=white,"
-        f"drawtext=text='Source\\: {channel}':x='{x_expr}+24':y=108:fontsize=20:fontcolor=white"
-    )
+    parts = ["format=yuv420p"]
+
+    if style == "minimal":
+        # Text-only with subtle shadow, no boxes
+        parts.append(
+            f"drawtext=text='YouTube':x='{x_expr}+24':y=64:fontsize=18:fontcolor={text_color}:shadowcolor=black@0.5:shadowx=1:shadowy=1"
+        )
+        parts.append(
+            f"drawtext=text='Source\\: {channel}':x='{x_expr}+24':y=90:fontsize=20:fontcolor={text_color}:shadowcolor=black@0.5:shadowx=1:shadowy=1"
+        )
+    else:
+        # Background box
+        if box_color:
+            parts.append(f"drawbox=x='{x_expr}+10':y=52:w=425:h=78:color={box_color}:t=fill")
+
+        # Accent bar
+        if accent_color:
+            parts.append(f"drawbox=x='{x_expr}':y=56:w=5:h=70:color={accent_color}:t=fill")
+            parts.append(f"drawbox=x='{x_expr}+24':y=74:w=32:h=32:color={accent_color}:t=fill")
+
+        # Icon/play symbol
+        if accent_icon:
+            parts.append(
+                f"drawtext=text='{_escape_drawtext_text(accent_icon)}':x='{x_expr}+35':y=78:fontsize=24:fontcolor={text_color}"
+            )
+
+        # "YouTube" label
+        parts.append(
+            f"drawtext=text='YouTube':x='{x_expr}+66':y=79:fontsize=18:fontcolor={text_color}"
+        )
+        # Channel/source line
+        parts.append(
+            f"drawtext=text='Source\\: {channel}':x='{x_expr}+24':y=108:fontsize=20:fontcolor={text_color}"
+        )
+
+    return ",".join(parts)
 
 
 def generate_subtitle(video_file, subtitle_file):
@@ -579,7 +697,11 @@ def proses_satu_clip(
     use_subtitle=False,
     use_source_tag=False,
     source_channel="Unknown Channel",
-    source_interval=SOURCE_TAG_DEFAULT_INTERVAL
+    source_interval=SOURCE_TAG_DEFAULT_INTERVAL,
+    subtitle_style="modern",
+    source_style="classic",
+    video_quality="medium",
+    video_title=None,
 ):
     """
     Download, crop, and export a single vertical clip
@@ -591,6 +713,10 @@ def proses_satu_clip(
         use_source_tag: whether to add animated source tag overlay
         source_channel: channel name used in source tag
         source_interval: seconds between source tag animations
+        subtitle_style: preset key from SUBTITLE_STYLES
+        source_style: preset key from SOURCE_TAG_STYLES
+        video_quality: preset key from VIDEO_QUALITY_PRESETS
+        video_title: custom title for output filename (sanitized)
     """
     start_original = item["start"]
     end_original = item["start"] + item["duration"]
@@ -627,12 +753,24 @@ def proses_satu_clip(
     if end - start < 3:
         return False
 
+    # Resolve quality preset
+    quality = VIDEO_QUALITY_PRESETS.get(video_quality, VIDEO_QUALITY_PRESETS["medium"])
+    q_crf = str(quality["crf"])
+    q_preset = quality["preset"]
+
+    # Build output filename
+    if video_title:
+        safe_title = sanitize_filename(video_title)
+        base_name = f"{safe_title}_clip_{index}"
+    else:
+        base_name = f"clip_{index}"
+
     temp_file = f"temp_{index}.mp4"
     cropped_file = f"temp_cropped_{index}.mp4"
     source_file = f"temp_source_{index}.mp4"
     subtitle_file = f"temp_{index}.srt"
-    output_file = os.path.join(OUTPUT_DIR, f"clip_{index}.mp4")
-    raw_subtitle_output = os.path.join(OUTPUT_DIR, f"clip_{index}.srt")
+    output_file = os.path.join(OUTPUT_DIR, f"{base_name}.mp4")
+    raw_subtitle_output = os.path.join(OUTPUT_DIR, f"{base_name}.srt")
 
     print(
         f"[Clip {index}] Processing segment "
@@ -673,7 +811,7 @@ def proses_satu_clip(
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", temp_file,
                 "-vf", "scale=-2:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
                 "-c:a", "aac", "-b:a", "128k",
                 cropped_file
             ]
@@ -713,7 +851,7 @@ def proses_satu_clip(
                 "-i", temp_file,
                 "-filter_complex", vf,
                 "-map", "[out]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
                 "-c:a", "aac", "-b:a", "128k",
                 cropped_file
             ]
@@ -730,7 +868,7 @@ def proses_satu_clip(
                 "-i", temp_file,
                 "-filter_complex", vf,
                 "-map", "[out]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
                 "-c:a", "aac", "-b:a", "128k",
                 cropped_file
             ]
@@ -750,12 +888,12 @@ def proses_satu_clip(
 
         if use_source_tag:
             print("  Adding animated source tag...")
-            source_filter = build_source_tag_filter(source_channel, source_interval)
+            source_filter = build_source_tag_filter(source_channel, source_interval, style=source_style)
             cmd_source = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", cropped_file,
                 "-vf", source_filter,
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
                 "-c:a", "copy",
                 source_file
             ]
@@ -789,12 +927,14 @@ def proses_satu_clip(
                 # Escape for FFmpeg: replace \ with / and escape special chars
                 subtitle_path = abs_subtitle_path.replace("\\", "/").replace(":", "\\:")
                 
+                # Resolve subtitle style preset
+                sub_force_style = SUBTITLE_STYLES.get(subtitle_style, SUBTITLE_STYLES["modern"])
+
                 cmd_subtitle = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-i", final_input_file,
-                    "-vf", f"subtitles='{subtitle_path}':force_style='FontName=Arial,FontSize=12,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=40'",
-                    # "-vf", f"subtitles='{subtitle_path}':force_style='FontName=Arial,FontSize=12,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=100'",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                    "-vf", f"subtitles='{subtitle_path}':force_style='{sub_force_style}'",
+                    "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
                     "-c:a", "copy",
                     output_file
                 ]
