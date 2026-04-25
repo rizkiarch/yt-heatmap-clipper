@@ -1,41 +1,194 @@
-import io
 import os
-import json
-import time
-from contextlib import redirect_stdout, redirect_stderr
+import subprocess
+import sys
+import tempfile
+import threading
+from io import BytesIO
 
-from flask import Flask, render_template, request, send_from_directory, abort, jsonify
+from flask import Flask, render_template, request, send_from_directory, abort, jsonify, send_file
 
 import run as clipper
+from job_service import (
+    build_history_entries,
+    create_job,
+    delete_history_entry,
+    get_job,
+    init_job_db,
+    process_job,
+    rename_history_entry,
+)
+from queue_client import publish_job_message
 
 app = Flask(__name__)
 
-MANIFEST_FILE = os.path.join(clipper.OUTPUT_DIR, "manifest.json")
+ASYNC_ENABLED = os.getenv("ASYNC_ENABLED", "1") == "1"
+ASYNC_FALLBACK_SYNC = os.getenv("ASYNC_FALLBACK_SYNC", "1") == "1"
+RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "yt_heatmap_clipper_jobs")
+
+init_job_db()
 
 
-def _load_manifest():
-    """Load clip history manifest from disk."""
-    if os.path.exists(MANIFEST_FILE):
-        try:
-            with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
+def _start_local_background_job(job_id, payload):
+    worker = threading.Thread(target=process_job, args=(job_id, payload), daemon=True)
+    worker.start()
 
 
-def _save_manifest(data):
-    """Save clip history manifest to disk."""
-    os.makedirs(clipper.OUTPUT_DIR, exist_ok=True)
-    with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def _resolve_overlay_preset(preset_name):
+    key = (preset_name or "").strip().lower()
+    if key in clipper.OVERLAY_PRESETS:
+        return key, clipper.OVERLAY_PRESETS[key]
+    if key == "custom":
+        return "custom", clipper.OVERLAY_PRESETS[clipper.DEFAULT_OVERLAY_PRESET]
+    fallback_key = clipper.DEFAULT_OVERLAY_PRESET
+    return fallback_key, clipper.OVERLAY_PRESETS[fallback_key]
 
 
-def _add_to_manifest(entry):
-    """Append a clip entry to the manifest."""
-    manifest = _load_manifest()
-    manifest.append(entry)
-    _save_manifest(manifest)
+def _build_payload_from_form(form):
+    overlay_preset_key, overlay_defaults = _resolve_overlay_preset(form.get("overlay_preset"))
+
+    payload = {
+        "url": (form.get("url", "") or "").strip(),
+        "crop_mode": form.get("crop_mode", "default"),
+        "use_subtitle": form.get("use_subtitle") == "on",
+        "use_source_tag": form.get("use_source_tag") == "on",
+        "subtitle_style": form.get("subtitle_style", "modern"),
+        "source_style": form.get("source_style", "classic"),
+        "video_quality": form.get("video_quality", "medium"),
+        "video_title": (form.get("video_title", "") or "").strip(),
+        "overlay_preset": overlay_preset_key,
+        "subtitle_font_size": clipper.clamp_int(
+            form.get("subtitle_font_size", overlay_defaults["subtitle_font_size"]),
+            9,
+            24,
+            overlay_defaults["subtitle_font_size"],
+        ),
+        "subtitle_bottom_margin": clipper.clamp_int(
+            form.get("subtitle_bottom_margin", overlay_defaults["subtitle_bottom_margin"]),
+            8,
+            120,
+            overlay_defaults["subtitle_bottom_margin"],
+        ),
+        "subtitle_max_chars": clipper.clamp_int(
+            form.get("subtitle_max_chars", overlay_defaults["subtitle_max_chars"]),
+            16,
+            64,
+            overlay_defaults["subtitle_max_chars"],
+        ),
+        "source_tag_scale": clipper.clamp_float(
+            form.get("source_tag_scale", overlay_defaults["source_tag_scale"]),
+            0.60,
+            1.60,
+            overlay_defaults["source_tag_scale"],
+        ),
+        "source_tag_position": (form.get("source_tag_position") or overlay_defaults["source_tag_position"]).strip().lower(),
+    }
+
+    try:
+        payload["source_interval"] = max(4.0, float(form.get("source_interval", 30)))
+    except (ValueError, TypeError):
+        payload["source_interval"] = clipper.SOURCE_TAG_DEFAULT_INTERVAL
+
+    if payload["crop_mode"] not in {"default", "split_left", "split_right", "blur_center"}:
+        payload["crop_mode"] = "default"
+    if payload["subtitle_style"] not in clipper.SUBTITLE_STYLES:
+        payload["subtitle_style"] = "modern"
+    if payload["source_style"] not in clipper.SOURCE_TAG_STYLES:
+        payload["source_style"] = "classic"
+    if payload["video_quality"] not in clipper.VIDEO_QUALITY_PRESETS:
+        payload["video_quality"] = "medium"
+    if payload["source_tag_position"] not in {"top-left", "top-right", "bottom-left", "bottom-right"}:
+        payload["source_tag_position"] = overlay_defaults["source_tag_position"]
+
+    return payload
+
+
+def _extract_video_stream_url(video_id):
+    cmd = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        "-f",
+        "bestvideo[height<=1080][ext=mp4]/best[ext=mp4]/best",
+        "-g",
+        f"https://youtu.be/{video_id}",
+    ]
+    try:
+        res = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        return lines[0] if lines else ""
+    except Exception:
+        return ""
+
+
+def _build_preview_crop_command(stream_url, crop_mode, seek_seconds, output_file):
+    seek_value = f"{float(seek_seconds):.3f}"
+
+    if crop_mode == "split_left":
+        vf = (
+            f"scale=-2:1280[scaled];"
+            f"[scaled]split=2[s1][s2];"
+            f"[s1]crop=720:{clipper.TOP_HEIGHT}:(iw-720)/2:(ih-1280)/2[top];"
+            f"[s2]crop=720:{clipper.BOTTOM_HEIGHT}:0:ih-{clipper.BOTTOM_HEIGHT}[bottom];"
+            f"[top][bottom]vstack=inputs=2[out]"
+        )
+        return [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-ss", seek_value,
+            "-i", stream_url,
+            "-filter_complex", vf,
+            "-map", "[out]",
+            "-frames:v", "1",
+            "-q:v", "2",
+            output_file,
+        ]
+
+    if crop_mode == "split_right":
+        vf = (
+            f"scale=-2:1280[scaled];"
+            f"[scaled]split=2[s1][s2];"
+            f"[s1]crop=720:{clipper.TOP_HEIGHT}:(iw-720)/2:(ih-1280)/2[top];"
+            f"[s2]crop=720:{clipper.BOTTOM_HEIGHT}:iw-720:ih-{clipper.BOTTOM_HEIGHT}[bottom];"
+            f"[top][bottom]vstack=inputs=2[out]"
+        )
+        return [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-ss", seek_value,
+            "-i", stream_url,
+            "-filter_complex", vf,
+            "-map", "[out]",
+            "-frames:v", "1",
+            "-q:v", "2",
+            output_file,
+        ]
+
+    if crop_mode == "blur_center":
+        vf = (
+            "[0:v]scale=720:1280:force_original_aspect_ratio=increase,"
+            "crop=720:1280,boxblur=20:10[bg];"
+            "[0:v]setsar=1,scale=720:405[fg];"
+            "[bg][fg]overlay=0:(H-h)/2[out]"
+        )
+        return [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-ss", seek_value,
+            "-i", stream_url,
+            "-filter_complex", vf,
+            "-map", "[out]",
+            "-frames:v", "1",
+            "-q:v", "2",
+            output_file,
+        ]
+
+    # default
+    return [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-ss", seek_value,
+        "-i", stream_url,
+        "-vf", "scale=-2:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2",
+        "-frames:v", "1",
+        "-q:v", "2",
+        output_file,
+    ]
 
 
 # ── Static / utility routes ──────────────────────────────────────────────────
@@ -125,45 +278,194 @@ def api_heatmap():
 
 @app.route("/api/history")
 def api_history():
-    """List previously generated clips with metadata."""
-    manifest = _load_manifest()
-    # Verify files still exist
-    valid = []
-    for entry in manifest:
-        fpath = os.path.join(clipper.OUTPUT_DIR, entry.get("filename", ""))
-        if os.path.exists(fpath):
-            entry["file_size"] = os.path.getsize(fpath)
-            valid.append(entry)
-    return jsonify(valid)
+    """List previously generated clips with metadata and subtitle text."""
+    return jsonify(build_history_entries())
 
 
 @app.route("/api/history/<filename>", methods=["DELETE"])
 def api_delete_clip(filename):
     """Delete a specific generated clip."""
-    if ".." in filename or "/" in filename:
-        abort(404)
+    ok, message = delete_history_entry(filename)
+    return jsonify({"ok": bool(ok), "message": message}), (200 if ok else 404)
 
-    fpath = os.path.join(clipper.OUTPUT_DIR, filename)
-    if os.path.exists(fpath):
-        os.remove(fpath)
 
-    # Also remove corresponding .srt if exists
-    srt_path = fpath.rsplit(".", 1)[0] + ".srt"
-    if os.path.exists(srt_path):
-        os.remove(srt_path)
+@app.route("/api/history/rename", methods=["POST"])
+def api_rename_clip():
+    payload = request.get_json(silent=True) or {}
+    filename = (payload.get("filename") or "").strip()
+    new_title = (payload.get("new_title") or "").strip()
 
-    # Update manifest
-    manifest = _load_manifest()
-    manifest = [e for e in manifest if e.get("filename") != filename]
-    _save_manifest(manifest)
+    ok, message, new_filename = rename_history_entry(filename, new_title)
+    return jsonify({
+        "ok": bool(ok),
+        "message": message,
+        "filename": filename,
+        "new_filename": new_filename,
+    }), (200 if ok else 400)
 
-    return jsonify({"ok": True})
+
+# ── API: Background Jobs ─────────────────────────────────────────────────────
+
+@app.route("/api/jobs/submit", methods=["POST"])
+def api_jobs_submit():
+    payload = _build_payload_from_form(request.form)
+    if not payload["url"]:
+        return jsonify({"error": "YouTube URL is required."}), 400
+
+    job_id = create_job(payload)
+    mode = "local-thread"
+    queue_error = ""
+
+    if ASYNC_ENABLED:
+        queued, queue_error = publish_job_message(
+            {
+                "job_id": job_id,
+                "payload": payload,
+            },
+            queue_name=RABBITMQ_QUEUE,
+        )
+        if queued:
+            mode = "rabbitmq"
+        elif ASYNC_FALLBACK_SYNC:
+            _start_local_background_job(job_id, payload)
+        else:
+            return jsonify({
+                "error": f"RabbitMQ publish failed: {queue_error}",
+                "job_id": job_id,
+            }), 503
+    else:
+        if ASYNC_FALLBACK_SYNC:
+            _start_local_background_job(job_id, payload)
+
+    return jsonify({
+        "job_id": job_id,
+        "mode": mode,
+        "queue_error": queue_error,
+    }), 202
+
+
+@app.route("/api/jobs/<job_id>")
+def api_jobs_status(job_id):
+    item = get_job(job_id)
+    if not item:
+        return jsonify({"error": "Job not found"}), 404
+
+    return jsonify(item)
+
+
+@app.route("/api/preview/frame", methods=["POST"])
+def api_preview_frame():
+    payload = _build_payload_from_form(request.form)
+    if not payload["url"]:
+        return jsonify({"error": "YouTube URL is required."}), 400
+
+    video_id = clipper.extract_video_id(payload["url"])
+    if not video_id:
+        return jsonify({"error": "Invalid YouTube URL."}), 400
+
+    metadata = clipper.get_video_metadata(video_id)
+    source_channel = clipper.get_channel_name_from_metadata(metadata) if metadata else "Unknown Channel"
+    duration = (clipper.get_duration_from_metadata(metadata) if metadata else None) or clipper.get_duration(video_id)
+
+    seek_default = 12.0
+    try:
+        seek_raw = float(request.form.get("preview_time", seek_default))
+    except (TypeError, ValueError):
+        seek_raw = seek_default
+
+    preview_subtitle_text = (
+        (request.form.get("preview_subtitle_text", "") or "").strip()
+    )[:240]
+    if not preview_subtitle_text:
+        preview_subtitle_text = "Ini contoh subtitle untuk preview ukuran dan posisi overlay."
+
+    max_seek = max(0.5, float(duration) - 0.5)
+    seek_seconds = clipper.clamp_float(seek_raw, 0.0, max_seek, seek_default)
+
+    stream_url = _extract_video_stream_url(video_id)
+    if not stream_url:
+        return jsonify({"error": "Failed to resolve video stream URL for preview."}), 502
+
+    with tempfile.TemporaryDirectory(prefix="preview_frame_") as temp_dir:
+        frame_base = os.path.join(temp_dir, "frame_base.jpg")
+        frame_source = os.path.join(temp_dir, "frame_source.jpg")
+        frame_subtitle = os.path.join(temp_dir, "frame_subtitle.jpg")
+        sample_srt = os.path.join(temp_dir, "sample_preview.srt")
+
+        cmd_frame = _build_preview_crop_command(stream_url, payload["crop_mode"], seek_seconds, frame_base)
+        try:
+            subprocess.run(cmd_frame, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError:
+            return jsonify({"error": "Failed to capture preview frame from source video."}), 500
+
+        current_frame = frame_base
+
+        if payload["use_source_tag"]:
+            source_filter = clipper.build_source_tag_filter(
+                source_channel,
+                payload["source_interval"],
+                style=payload["source_style"],
+                scale=payload["source_tag_scale"],
+                position=payload["source_tag_position"],
+            )
+            cmd_source = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", current_frame,
+                "-vf", source_filter,
+                "-frames:v", "1",
+                "-q:v", "2",
+                frame_source,
+            ]
+            try:
+                subprocess.run(cmd_source, check=True, capture_output=True, text=True)
+                current_frame = frame_source
+            except subprocess.CalledProcessError:
+                pass
+
+        if payload["use_subtitle"]:
+            wrapped = clipper.wrap_subtitle_text(preview_subtitle_text, payload["subtitle_max_chars"])
+            with open(sample_srt, "w", encoding="utf-8") as f:
+                f.write("1\n")
+                f.write("00:00:00,000 --> 00:00:20,000\n")
+                f.write(f"{wrapped}\n")
+
+            subtitle_style = clipper.build_subtitle_force_style(
+                payload["subtitle_style"],
+                font_size=payload["subtitle_font_size"],
+                bottom_margin=payload["subtitle_bottom_margin"],
+            )
+            subtitle_path = os.path.abspath(sample_srt).replace("\\", "/").replace(":", "\\:")
+            cmd_subtitle = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", current_frame,
+                "-vf", f"subtitles='{subtitle_path}':force_style='{subtitle_style}'",
+                "-frames:v", "1",
+                "-q:v", "2",
+                frame_subtitle,
+            ]
+            try:
+                subprocess.run(cmd_subtitle, check=True, capture_output=True, text=True)
+                current_frame = frame_subtitle
+            except subprocess.CalledProcessError:
+                pass
+
+        with open(current_frame, "rb") as f:
+            image_bytes = f.read()
+
+    return send_file(
+        BytesIO(image_bytes),
+        mimetype="image/jpeg",
+        as_attachment=False,
+        download_name="preview.jpg",
+        max_age=0,
+    )
 
 
 # ── Main page + processing ───────────────────────────────────────────────────
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET"])
 def index():
+    overlay_key, overlay_defaults = _resolve_overlay_preset(clipper.DEFAULT_OVERLAY_PRESET)
     data = {
         "url": "",
         "crop_mode": "default",
@@ -174,141 +476,27 @@ def index():
         "source_interval": clipper.SOURCE_TAG_DEFAULT_INTERVAL,
         "video_quality": "medium",
         "video_title": "",
+        "overlay_preset": overlay_key,
+        "subtitle_font_size": overlay_defaults["subtitle_font_size"],
+        "subtitle_bottom_margin": overlay_defaults["subtitle_bottom_margin"],
+        "subtitle_max_chars": overlay_defaults["subtitle_max_chars"],
+        "source_tag_scale": overlay_defaults["source_tag_scale"],
+        "source_tag_position": overlay_defaults["source_tag_position"],
+        "preview_time": 12,
+        "preview_subtitle_text": "Ini contoh subtitle untuk preview ukuran dan posisi overlay.",
     }
-    logs = ""
-    error = ""
-    success = ""
-    files = []
 
-    if request.method == "POST":
-        data["url"] = request.form.get("url", "").strip()
-        data["crop_mode"] = request.form.get("crop_mode", "default")
-        data["use_subtitle"] = request.form.get("use_subtitle") == "on"
-        data["use_source_tag"] = request.form.get("use_source_tag") == "on"
-        data["subtitle_style"] = request.form.get("subtitle_style", "modern")
-        data["source_style"] = request.form.get("source_style", "classic")
-        data["video_quality"] = request.form.get("video_quality", "medium")
-        data["video_title"] = request.form.get("video_title", "").strip()
-
-        try:
-            data["source_interval"] = max(4.0, float(request.form.get("source_interval", 30)))
-        except (ValueError, TypeError):
-            data["source_interval"] = 30.0
-
-        # Validate crop mode
-        valid_crop_modes = {"default", "split_left", "split_right", "blur_center"}
-        if data["crop_mode"] not in valid_crop_modes:
-            data["crop_mode"] = "default"
-
-        # Validate presets
-        if data["subtitle_style"] not in clipper.SUBTITLE_STYLES:
-            data["subtitle_style"] = "modern"
-        if data["source_style"] not in clipper.SOURCE_TAG_STYLES:
-            data["source_style"] = "classic"
-        if data["video_quality"] not in clipper.VIDEO_QUALITY_PRESETS:
-            data["video_quality"] = "medium"
-
-        if not data["url"]:
-            error = "YouTube URL is required."
-        else:
-            buffer = io.StringIO()
-            try:
-                with redirect_stdout(buffer), redirect_stderr(buffer):
-                    clipper.cek_dependensi(
-                        install_whisper=data["use_subtitle"],
-                        update_ytdlp=False,
-                    )
-
-                    video_id = clipper.extract_video_id(data["url"])
-                    if not video_id:
-                        raise ValueError("Invalid YouTube URL.")
-
-                    # Fetch metadata for channel name + duration
-                    metadata = clipper.get_video_metadata(video_id)
-                    source_channel = clipper.get_channel_name_from_metadata(metadata) if metadata else "Unknown Channel"
-
-                    total_duration = (
-                        clipper.get_duration_from_metadata(metadata) if metadata else None
-                    ) or clipper.get_duration(video_id)
-
-                    heatmap_data = clipper.ambil_most_replayed(video_id)
-                    if not heatmap_data:
-                        heatmap_data = clipper.ambil_fallback_segments(video_id, total_duration, metadata)
-
-                    if not heatmap_data:
-                        raise RuntimeError(
-                            "No high-engagement segments found and fallback also failed."
-                        )
-
-                    os.makedirs(clipper.OUTPUT_DIR, exist_ok=True)
-
-                    success_count = 0
-                    generated_files = []
-                    for item in heatmap_data:
-                        if success_count >= clipper.MAX_CLIPS:
-                            break
-
-                        if clipper.proses_satu_clip(
-                            video_id,
-                            item,
-                            success_count + 1,
-                            total_duration,
-                            data["crop_mode"],
-                            data["use_subtitle"],
-                            data["use_source_tag"],
-                            source_channel,
-                            data["source_interval"],
-                            data["subtitle_style"],
-                            data["source_style"],
-                            data["video_quality"],
-                            data["video_title"] or None,
-                        ):
-                            success_count += 1
-
-                            # Determine output filename
-                            if data["video_title"]:
-                                safe_title = clipper.sanitize_filename(data["video_title"])
-                                fname = f"{safe_title}_clip_{success_count}.mp4"
-                            else:
-                                fname = f"clip_{success_count}.mp4"
-
-                            generated_files.append(fname)
-
-                            # Add to manifest
-                            _add_to_manifest({
-                                "filename": fname,
-                                "source_url": data["url"],
-                                "video_title": data["video_title"] or metadata.get("title", "") if metadata else "",
-                                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                "duration": item.get("duration", 0),
-                                "crop_mode": data["crop_mode"],
-                                "subtitle_style": data["subtitle_style"],
-                                "source_style": data["source_style"],
-                                "video_quality": data["video_quality"],
-                            })
-
-                    success = (
-                        f"Finished. {success_count} clip(s) generated in '{clipper.OUTPUT_DIR}'."
-                    )
-
-                files = generated_files if generated_files else sorted(
-                    [f for f in os.listdir(clipper.OUTPUT_DIR) if f.endswith(".mp4")]
-                )
-            except Exception as exc:
-                error = str(exc)
-            finally:
-                logs = buffer.getvalue()
+    history = build_history_entries()
 
     return render_template(
         "index.html",
         data=data,
-        logs=logs,
-        error=error,
-        success=success,
-        files=files,
+        history=history,
+        async_enabled=ASYNC_ENABLED,
         subtitle_styles=list(clipper.SUBTITLE_STYLES.keys()),
         source_styles=list(clipper.SOURCE_TAG_STYLES.keys()),
         quality_presets=clipper.VIDEO_QUALITY_PRESETS,
+        overlay_presets=clipper.OVERLAY_PRESETS,
     )
 
 
