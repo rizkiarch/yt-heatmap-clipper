@@ -166,10 +166,28 @@
        LAYOUT
        ═══════════════════════════════════════════════════════════════════════ */
     .app-container {
-      max-width: 900px;
+      max-width: 1240px;
       margin: 0 auto;
       padding: var(--space-lg) var(--space-md);
       min-height: 100vh;
+    }
+
+    .form-workbench {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--space-lg);
+      align-items: start;
+    }
+
+    .settings-card,
+    #overlayPreviewCard {
+      margin-bottom: 0;
+    }
+
+    #overlayPreviewCard {
+      position: sticky;
+      top: var(--space-md);
+      align-self: start;
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -601,6 +619,215 @@
       color: var(--accent-primary);
     }
 
+    .overlay-preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: var(--space-sm);
+      margin-top: var(--space-sm);
+    }
+
+    .overlay-preset-grid .preset-label {
+      font-size: 0.75rem;
+      color: var(--text-primary);
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .overlay-preset-grid .preset-note {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .preview-lab-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-md);
+    }
+
+    .preview-stage {
+      position: relative;
+      width: 100%;
+      max-width: 280px;
+      margin: 0 auto;
+      aspect-ratio: 9 / 16;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid var(--border-default);
+      box-shadow: var(--shadow-md);
+      background: radial-gradient(circle at 25% 20%, rgba(99, 102, 241, 0.35), transparent 48%),
+                  linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+    }
+
+    .preview-bg-image {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.55;
+      filter: saturate(0.95) contrast(1.05);
+    }
+
+    .preview-source-tag {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      background: rgba(16, 24, 40, 0.75);
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 600;
+      transform-origin: top left;
+      max-width: 85%;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      backdrop-filter: blur(2px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all var(--transition-fast);
+    }
+
+    .preview-source-accent {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      background: rgba(239, 68, 68, 0.95);
+      font-size: 0.6rem;
+      flex: 0 0 18px;
+    }
+
+    .preview-subtitle {
+      position: absolute;
+      left: 50%;
+      bottom: 26px;
+      transform: translateX(-50%);
+      width: calc(100% - 20px);
+      text-align: center;
+      color: #fff;
+      font-size: 12px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 1.28;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+      transition: all var(--transition-fast);
+      white-space: pre-line;
+      pointer-events: none;
+    }
+
+    .preview-subtitle[data-style="minimal"] {
+      font-weight: 500;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    }
+
+    .preview-subtitle[data-style="karaoke"] {
+      color: #7df9ff;
+    }
+
+    .preview-subtitle[data-style="bold"] {
+      font-family: Impact, sans-serif;
+      letter-spacing: 0.2px;
+    }
+
+    .preview-subtitle[data-style="neon"] {
+      color: #00ff88;
+      text-shadow: 0 0 6px rgba(255, 0, 170, 0.9), 0 0 16px rgba(0, 255, 136, 0.6);
+    }
+
+    .preview-caption {
+      margin-top: var(--space-sm);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+
+    .preview-mode-row {
+      display: flex;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .preview-mode-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      font-size: 0.72rem;
+      font-weight: 700;
+      border: 1px solid var(--border-default);
+      color: var(--text-secondary);
+      background: var(--bg-surface);
+    }
+
+    .preview-mode-chip.fast {
+      border-color: rgba(99, 102, 241, 0.45);
+      color: #a5b4fc;
+    }
+
+    .preview-mode-chip.accurate {
+      border-color: rgba(34, 197, 94, 0.45);
+      color: #86efac;
+    }
+
+    .preview-help {
+      margin-top: var(--space-sm);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+
+    .preview-textarea {
+      min-height: 72px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .accurate-preview-title {
+      margin-top: var(--space-sm);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .accurate-preview-box {
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      background: var(--bg-surface);
+      min-height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .accurate-preview-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    .accurate-preview-placeholder {
+      padding: var(--space-md);
+      text-align: center;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
     /* ═══════════════════════════════════════════════════════════════════════
        QUALITY SELECTOR
        ═══════════════════════════════════════════════════════════════════════ */
@@ -788,6 +1015,7 @@
       display: flex;
       gap: var(--space-sm);
       margin-top: var(--space-sm);
+      flex-wrap: wrap;
     }
     .btn-download {
       display: inline-flex;
@@ -807,6 +1035,100 @@
     .btn-download:hover {
       background: var(--accent-primary-hover);
       transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background: #b42318;
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      background: #911a12;
+    }
+
+    .result-title-row {
+      display: flex;
+      gap: var(--space-sm);
+      margin-top: var(--space-sm);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .result-title-input {
+      flex: 1;
+      min-width: 180px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-default);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-size: 0.8rem;
+    }
+
+    body.ui-busy a[data-busy-lock="1"] {
+      pointer-events: none;
+      opacity: 0.55;
+    }
+
+    .subtitle-panel {
+      margin-top: var(--space-sm);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      overflow: hidden;
+    }
+    .subtitle-header {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+    .subtitle-pre {
+      margin: 0;
+      padding: 10px;
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      line-height: 1.55;
+      color: var(--text-primary);
+    }
+
+    .result-empty {
+      padding: var(--space-md);
+      color: var(--text-secondary);
+      border: 1px dashed var(--border-default);
+      border-radius: var(--radius-md);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    .job-progress {
+      margin-top: var(--space-sm);
+    }
+    .job-progress .bar-track {
+      width: 100%;
+      height: 10px;
+      border-radius: var(--radius-full);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+    }
+    .job-progress .bar-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--gradient-hero);
+      transition: width var(--transition-base);
+    }
+    .job-progress .job-text {
+      margin-top: 8px;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -981,6 +1303,33 @@
       .result-item video {
         width: 100%;
       }
+
+      .result-title-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .result-title-input {
+        width: 100%;
+      }
+
+      .preview-lab-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-stage {
+        max-width: 320px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .form-workbench {
+        grid-template-columns: 1fr;
+      }
+
+      #overlayPreviewCard {
+        position: static;
+      }
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -1007,7 +1356,7 @@
       transition: max-height var(--transition-slow);
     }
     .collapsible-body.open {
-      max-height: 1000px;
+      max-height: 6000px;
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -1102,8 +1451,9 @@
         </div>
       </div>
 
+      <div class="form-workbench">
       <!-- ── Settings Card ── -->
-      <div class="card">
+      <div class="card settings-card">
         <div class="collapsible-header open" id="settingsToggle">
           <div class="card-title" style="margin-bottom:0"><span class="icon">⚙️</span> Settings</div>
           <span class="chevron">▼</span>
@@ -1154,6 +1504,19 @@
             {% endfor %}
           </div>
 
+          <div class="section-divider">Overlay Presets</div>
+          <input type="hidden" name="overlay_preset" id="overlayPresetInput" value="{{ data.overlay_preset }}">
+          <div class="overlay-preset-grid" id="overlayPresetGrid">
+            {% for key, preset in overlay_presets.items() %}
+            <label class="preset-card {% if data.overlay_preset == key %}selected{% endif %}" data-overlay-preset="{{ key }}">
+              <input type="radio" name="overlay_preset_visual" value="{{ key }}" {% if data.overlay_preset == key %}checked{% endif %}>
+              <div class="preview-text">{{ preset.label }}</div>
+              <div class="preset-label">{{ key }}</div>
+              <div class="preset-note">Subtitle + source tuned</div>
+            </label>
+            {% endfor %}
+          </div>
+
           <!-- Subtitle Section -->
           <div class="section-divider">Subtitles</div>
           <div class="toggle-row">
@@ -1177,6 +1540,30 @@
                 <div class="preset-label">{{ style }}</div>
               </label>
               {% endfor %}
+            </div>
+
+            <div class="field-group" style="margin-top: var(--space-md)">
+              <label class="field-label">Subtitle Size</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="subtitle_font_size" id="subtitleFontSize" min="9" max="24" step="1" value="{{ data.subtitle_font_size|int }}">
+                <span class="slider-value" id="subtitleFontSizeValue">{{ data.subtitle_font_size|int }}px</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Bottom Offset</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="subtitle_bottom_margin" id="subtitleBottomMargin" min="8" max="120" step="1" value="{{ data.subtitle_bottom_margin|int }}">
+                <span class="slider-value" id="subtitleBottomMarginValue">{{ data.subtitle_bottom_margin|int }}px</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Max Chars / Line</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="subtitle_max_chars" id="subtitleMaxChars" min="16" max="64" step="1" value="{{ data.subtitle_max_chars|int }}">
+                <span class="slider-value" id="subtitleMaxCharsValue">{{ data.subtitle_max_chars|int }}</span>
+              </div>
             </div>
           </div>
 
@@ -1213,8 +1600,75 @@
                 <span class="slider-value" id="intervalValue">{{ data.source_interval|int }}s</span>
               </div>
             </div>
+
+            <div class="field-group">
+              <label class="field-label">Source Tag Scale</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="source_tag_scale" id="sourceTagScale" min="0.60" max="1.60" step="0.01" value="{{ '%.2f'|format(data.source_tag_scale) }}">
+                <span class="slider-value" id="sourceTagScaleValue">{{ '%.2f'|format(data.source_tag_scale) }}x</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="sourceTagPosition">Source Tag Position</label>
+              <select class="field-input" name="source_tag_position" id="sourceTagPosition">
+                <option value="top-left" {% if data.source_tag_position == 'top-left' %}selected{% endif %}>Top Left</option>
+                <option value="top-right" {% if data.source_tag_position == 'top-right' %}selected{% endif %}>Top Right</option>
+                <option value="bottom-left" {% if data.source_tag_position == 'bottom-left' %}selected{% endif %}>Bottom Left</option>
+                <option value="bottom-right" {% if data.source_tag_position == 'bottom-right' %}selected{% endif %}>Bottom Right</option>
+              </select>
+            </div>
           </div>
         </div>
+      </div>
+
+      <div class="card" id="overlayPreviewCard">
+        <div class="card-title"><span class="icon">🎛️</span> Overlay Preview Lab</div>
+        <div class="preview-mode-row">
+          <span class="preview-mode-chip fast">Fast Simulator</span>
+          <span class="preview-mode-chip accurate">Accurate FFmpeg Frame</span>
+        </div>
+        <div class="preview-lab-grid">
+          <div>
+            <div class="preview-stage" id="previewStage">
+              <img id="previewBgImage" class="preview-bg-image" src="" alt="Preview background" style="display:none">
+              <div class="preview-source-tag" id="previewSourceTag">
+                <span class="preview-source-accent">▶</span>
+                <span id="previewSourceText">Source: Channel</span>
+              </div>
+              <div class="preview-subtitle" id="previewSubtitle" data-style="modern">Contoh subtitle untuk cek ukuran dan posisi.</div>
+            </div>
+            <div class="preview-caption">
+              Fast Simulator: update instan untuk posisi, ukuran, dan style overlay.
+            </div>
+            <div class="preview-help">
+              Simulator cepat dipakai untuk tuning UI. Gunakan mode Accurate untuk melihat frame FFmpeg yang lebih dekat ke hasil video final.
+            </div>
+          </div>
+
+          <div>
+            <div class="field-group">
+              <label class="field-label" for="previewSubtitleText">Preview Subtitle Text</label>
+              <textarea id="previewSubtitleText" name="preview_subtitle_text" class="field-input preview-textarea" placeholder="Teks subtitle untuk simulasi dan accurate preview...">{{ data.preview_subtitle_text }}</textarea>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Accurate Frame Time</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" id="previewTime" name="preview_time" min="0" max="90" step="1" value="{{ data.preview_time|int }}">
+                <span class="slider-value" id="previewTimeValue">{{ data.preview_time|int }}s</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-block" id="btnAccuratePreview">Render Accurate Preview</button>
+            <div class="accurate-preview-title">Accurate Frame Output</div>
+            <div class="accurate-preview-box" style="margin-top: var(--space-sm)">
+              <img id="accuratePreviewImage" class="accurate-preview-image" src="" alt="Accurate preview frame">
+              <div id="accuratePreviewPlaceholder" class="accurate-preview-placeholder">
+                Klik <strong>Render Accurate Preview</strong> untuk melihat frame FFmpeg sesuai setting saat ini.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       </div>
 
       <!-- ── Submit ── -->
@@ -1225,44 +1679,57 @@
       </div>
     </form>
 
-    <!-- ── Results ── -->
-    {% if error %}
-    <div class="status-box error" style="margin-top: var(--space-lg)">⚠️ {{ error }}</div>
-    {% endif %}
+    <!-- ── Runtime Status ── -->
+    <div class="status-box" id="runtimeStatus" style="display:none; margin-top: var(--space-lg)"></div>
 
-    {% if success %}
-    <div class="status-box success" style="margin-top: var(--space-lg)">✅ {{ success }}</div>
-    {% endif %}
-
-    {% if files %}
-    <div class="card" style="margin-top: var(--space-lg)">
-      <div class="card-title"><span class="icon">🎬</span> Generated Clips</div>
-      <div class="result-grid">
-        {% for f in files %}
-        <div class="result-item">
-          <video controls preload="metadata" playsinline>
-            <source src="{{ url_for('serve_clip', filename=f) }}" type="video/mp4">
-          </video>
-          <div class="result-info">
-            <div class="filename">{{ f }}</div>
-            <div class="result-actions">
-              <a href="{{ url_for('serve_clip', filename=f) }}" download class="btn-download">⬇ Download MP4</a>
-              {% set srt_name = f.replace('.mp4', '.srt') %}
-              <a href="{{ url_for('serve_clip', filename=srt_name) }}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">📄 SRT</a>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
+    <div class="card" id="jobProgressCard" style="display:none; margin-top: var(--space-md)">
+      <div class="card-title"><span class="icon">🧵</span> Background Job</div>
+      <div class="job-progress">
+        <div class="bar-track"><div class="bar-fill" id="jobProgressFill"></div></div>
+        <div class="job-text" id="jobProgressText">Queued</div>
       </div>
     </div>
-    {% endif %}
 
-    {% if logs %}
-    <div class="card" style="margin-top: var(--space-md)">
-      <div class="card-title"><span class="icon">📋</span> Process Logs</div>
-      <div class="log-viewer">{{ logs }}</div>
+    <div class="card" id="jobLogsCard" style="display:none; margin-top: var(--space-md)">
+      <div class="card-title"><span class="icon">📋</span> Process Log</div>
+      <div class="log-viewer" id="jobLogsViewer">Log sistem akan tampil di sini...</div>
     </div>
-    {% endif %}
+
+    <!-- ── Results ── -->
+    <div class="card" style="margin-top: var(--space-lg)">
+      <div class="card-title"><span class="icon">🎬</span> Generated Clips History</div>
+      <div class="result-grid" id="historyGrid">
+        {% if history %}
+          {% for item in history %}
+          <div class="result-item">
+            <video controls preload="metadata" playsinline>
+              <source src="{{ url_for('serve_clip', filename=item.filename) }}" type="video/mp4">
+            </video>
+            <div class="result-info">
+              <div class="filename">{{ item.filename }}</div>
+              <div class="result-actions">
+                <a href="{{ url_for('serve_clip', filename=item.filename) }}" download class="btn-download">⬇ Download MP4</a>
+                <a href="{{ url_for('serve_clip', filename=item.subtitle_filename) }}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">📄 Download SRT</a>
+              </div>
+              {% if item.subtitle_text %}
+              <div class="subtitle-panel">
+                <div class="subtitle-header">Subtitle Text (.srt)</div>
+                <pre class="subtitle-pre">{{ item.subtitle_text }}</pre>
+              </div>
+              {% else %}
+              <div class="subtitle-panel">
+                <div class="subtitle-header">Subtitle Text (.srt)</div>
+                <pre class="subtitle-pre">No subtitle content available.</pre>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="result-empty">No generated clips yet.</div>
+        {% endif %}
+      </div>
+    </div>
 
     <footer class="app-footer">
       YT Heatmap Clipper · Using Faster-Whisper & FFmpeg · <a href="https://github.com" target="_blank">GitHub</a>
@@ -1290,6 +1757,8 @@
     // ═══════════════════════════════════════════════════════════════════════
     // PRESET CARD SELECTION
     // ═══════════════════════════════════════════════════════════════════════
+    const OVERLAY_PRESETS = {{ overlay_presets|tojson }};
+
     function setupCardSelection(gridId) {
       const grid = document.getElementById(gridId);
       if (!grid) return;
@@ -1304,25 +1773,127 @@
     setupCardSelection('qualityGrid');
     setupCardSelection('subtitleGrid');
     setupCardSelection('sourceGrid');
+    setupCardSelection('overlayPresetGrid');
+
+    const overlayPresetInput = document.getElementById('overlayPresetInput');
+    const overlayPresetGrid = document.getElementById('overlayPresetGrid');
+
+    function markOverlayPresetCustom() {
+      if (!overlayPresetInput || !overlayPresetGrid) return;
+      overlayPresetInput.value = 'custom';
+      overlayPresetGrid.querySelectorAll('label').forEach((el) => el.classList.remove('selected'));
+      overlayPresetGrid.querySelectorAll('input[type="radio"]').forEach((el) => {
+        el.checked = false;
+      });
+    }
+
+    function applyOverlayPreset(presetKey) {
+      const cfg = OVERLAY_PRESETS[presetKey];
+      if (!cfg) return;
+
+      document.getElementById('subtitleFontSize').value = cfg.subtitle_font_size;
+      document.getElementById('subtitleBottomMargin').value = cfg.subtitle_bottom_margin;
+      document.getElementById('subtitleMaxChars').value = cfg.subtitle_max_chars;
+      document.getElementById('sourceTagScale').value = Number(cfg.source_tag_scale).toFixed(2);
+      document.getElementById('sourceTagPosition').value = cfg.source_tag_position;
+
+      overlayPresetInput.value = presetKey;
+      overlayPresetGrid.querySelectorAll('label').forEach((card) => {
+        card.classList.toggle('selected', card.getAttribute('data-overlay-preset') === presetKey);
+      });
+      overlayPresetGrid.querySelectorAll('input[type="radio"]').forEach((radio) => {
+        radio.checked = radio.value === presetKey;
+      });
+
+      updateSliderLabels();
+      updateOverlaySimulator();
+    }
+
+    if (overlayPresetGrid) {
+      overlayPresetGrid.addEventListener('click', (event) => {
+        const card = event.target.closest('label[data-overlay-preset]');
+        if (!card) return;
+        const presetKey = card.getAttribute('data-overlay-preset');
+        if (!presetKey) return;
+        applyOverlayPreset(presetKey);
+      });
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // TOGGLE SECTIONS
     // ═══════════════════════════════════════════════════════════════════════
     document.getElementById('useSubtitle').addEventListener('change', function() {
       document.getElementById('subtitleOptions').style.display = this.checked ? '' : 'none';
+      updateOverlaySimulator();
     });
     document.getElementById('useSourceTag').addEventListener('change', function() {
       document.getElementById('sourceOptions').style.display = this.checked ? '' : 'none';
+      updateOverlaySimulator();
     });
 
-    // Slider value display
-    const intervalSlider = document.getElementById('sourceInterval');
-    const intervalValue = document.getElementById('intervalValue');
-    if (intervalSlider) {
-      intervalSlider.addEventListener('input', () => {
-        intervalValue.textContent = intervalSlider.value + 's';
-      });
+    function updateSliderLabels() {
+      const intervalSlider = document.getElementById('sourceInterval');
+      const subtitleFontSize = document.getElementById('subtitleFontSize');
+      const subtitleBottomMargin = document.getElementById('subtitleBottomMargin');
+      const subtitleMaxChars = document.getElementById('subtitleMaxChars');
+      const sourceTagScale = document.getElementById('sourceTagScale');
+      const previewTime = document.getElementById('previewTime');
+
+      if (intervalSlider) {
+        document.getElementById('intervalValue').textContent = intervalSlider.value + 's';
+      }
+      if (subtitleFontSize) {
+        document.getElementById('subtitleFontSizeValue').textContent = subtitleFontSize.value + 'px';
+      }
+      if (subtitleBottomMargin) {
+        document.getElementById('subtitleBottomMarginValue').textContent = subtitleBottomMargin.value + 'px';
+      }
+      if (subtitleMaxChars) {
+        document.getElementById('subtitleMaxCharsValue').textContent = subtitleMaxChars.value;
+      }
+      if (sourceTagScale) {
+        document.getElementById('sourceTagScaleValue').textContent = Number(sourceTagScale.value).toFixed(2) + 'x';
+      }
+      if (previewTime) {
+        document.getElementById('previewTimeValue').textContent = previewTime.value + 's';
+      }
     }
+
+    ['sourceInterval', 'subtitleFontSize', 'subtitleBottomMargin', 'subtitleMaxChars', 'sourceTagScale', 'previewTime'].forEach((id) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.addEventListener('input', () => {
+        if (id !== 'previewTime') {
+          markOverlayPresetCustom();
+        }
+        updateSliderLabels();
+        updateOverlaySimulator();
+      });
+    });
+
+    ['sourceTagPosition', 'video_title', 'previewSubtitleText'].forEach((id) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.addEventListener('change', () => {
+        if (id === 'sourceTagPosition') {
+          markOverlayPresetCustom();
+        }
+        updateOverlaySimulator();
+      });
+      input.addEventListener('input', () => {
+        if (id === 'sourceTagPosition') {
+          markOverlayPresetCustom();
+        }
+        updateOverlaySimulator();
+      });
+    });
+
+    document.querySelectorAll('input[name="subtitle_style"]').forEach((el) => {
+      el.addEventListener('change', updateOverlaySimulator);
+    });
+    document.querySelectorAll('input[name="source_style"]').forEach((el) => {
+      el.addEventListener('change', updateOverlaySimulator);
+    });
 
     // Collapsible settings
     const settingsToggle = document.getElementById('settingsToggle');
@@ -1331,6 +1902,8 @@
       settingsToggle.classList.toggle('open');
       settingsBody.classList.toggle('open');
     });
+
+    updateSliderLabels();
 
     // ═══════════════════════════════════════════════════════════════════════
     // VIDEO INFO FETCH
@@ -1365,6 +1938,13 @@
         document.getElementById('durationChip').textContent = '⏱ ' + formatDuration(data.duration);
         document.getElementById('viewsChip').textContent = '👁 ' + formatViews(data.view_count);
 
+        const previewBg = document.getElementById('previewBgImage');
+        if (previewBg && data.thumbnail) {
+          previewBg.src = data.thumbnail;
+          previewBg.style.display = '';
+        }
+        document.getElementById('previewSourceText').textContent = `Source: ${data.channel || 'Channel'}`;
+
         videoInfoPanel.classList.add('visible');
 
         // Pre-fill title if empty
@@ -1372,6 +1952,13 @@
         if (!titleInput.value.trim()) {
           titleInput.value = data.title;
         }
+
+        const previewSubtitleInput = document.getElementById('previewSubtitleText');
+        if (previewSubtitleInput && !previewSubtitleInput.value.trim()) {
+          previewSubtitleInput.value = `Potongan viral dari ${data.title}`;
+        }
+
+        updateOverlaySimulator();
       } catch (err) {
         console.error(err);
         alert('Failed to fetch video info.');
@@ -1409,6 +1996,150 @@
       if (count >= 1e3) return (count / 1e3).toFixed(1) + 'K';
       return count.toLocaleString();
     }
+
+    function wrapPreviewText(text, maxChars) {
+      const clean = (text || '').replace(/\s+/g, ' ').trim();
+      const limit = Math.max(16, Math.min(64, Number(maxChars || 30)));
+      if (clean.length <= limit) {
+        return clean;
+      }
+
+      const words = clean.split(' ');
+      const lines = [];
+      let current = '';
+
+      words.forEach((word) => {
+        const next = current ? `${current} ${word}` : word;
+        if (next.length <= limit) {
+          current = next;
+          return;
+        }
+        if (current) {
+          lines.push(current);
+        }
+        current = word;
+      });
+
+      if (current) {
+        lines.push(current);
+      }
+
+      return lines.join('\n');
+    }
+
+    function getSelectedRadioValue(name, fallback) {
+      const checked = document.querySelector(`input[name="${name}"]:checked`);
+      return checked ? checked.value : fallback;
+    }
+
+    function updateOverlaySimulator() {
+      const subtitleEl = document.getElementById('previewSubtitle');
+      const sourceEl = document.getElementById('previewSourceTag');
+      if (!subtitleEl || !sourceEl) return;
+
+      const useSubtitle = document.getElementById('useSubtitle').checked;
+      const useSourceTag = document.getElementById('useSourceTag').checked;
+
+      subtitleEl.style.display = useSubtitle ? '' : 'none';
+      sourceEl.style.display = useSourceTag ? '' : 'none';
+
+      const subtitleSize = Number(document.getElementById('subtitleFontSize').value || 12);
+      const subtitleBottom = Number(document.getElementById('subtitleBottomMargin').value || 28);
+      const subtitleMaxChars = Number(document.getElementById('subtitleMaxChars').value || 30);
+      const subtitleStyle = getSelectedRadioValue('subtitle_style', 'modern');
+      const previewSubtitleInput = document.getElementById('previewSubtitleText');
+      const previewSubtitleText = (previewSubtitleInput ? previewSubtitleInput.value : '').trim();
+      const fallbackSubtitle = 'Ini contoh subtitle untuk mengecek ukuran, posisi, dan kepadatan baris.';
+
+      subtitleEl.style.fontSize = `${subtitleSize}px`;
+      subtitleEl.style.bottom = `${subtitleBottom}px`;
+      subtitleEl.dataset.style = subtitleStyle;
+      subtitleEl.textContent = wrapPreviewText(
+        previewSubtitleText || fallbackSubtitle,
+        subtitleMaxChars
+      );
+
+      const sourceScale = Number(document.getElementById('sourceTagScale').value || 1);
+      const sourcePos = document.getElementById('sourceTagPosition').value || 'top-left';
+      const sourceStyle = getSelectedRadioValue('source_style', 'classic');
+
+      sourceEl.style.transform = `scale(${sourceScale.toFixed(2)})`;
+      sourceEl.style.transformOrigin = sourcePos.includes('right') ? 'top right' : 'top left';
+
+      sourceEl.style.top = sourcePos.includes('top') ? '14px' : 'auto';
+      sourceEl.style.bottom = sourcePos.includes('bottom') ? '14px' : 'auto';
+      sourceEl.style.left = sourcePos.includes('left') ? '14px' : 'auto';
+      sourceEl.style.right = sourcePos.includes('right') ? '14px' : 'auto';
+
+      if (sourceStyle === 'minimal') {
+        sourceEl.style.background = 'rgba(15, 23, 42, 0.32)';
+        sourceEl.style.borderColor = 'rgba(255, 255, 255, 0.10)';
+      } else if (sourceStyle === 'glass') {
+        sourceEl.style.background = 'rgba(255, 255, 255, 0.2)';
+        sourceEl.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+      } else if (sourceStyle === 'neon') {
+        sourceEl.style.background = 'rgba(15, 23, 42, 0.78)';
+        sourceEl.style.borderColor = 'rgba(0, 255, 136, 0.55)';
+      } else {
+        sourceEl.style.background = 'rgba(16, 24, 40, 0.75)';
+        sourceEl.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+      }
+    }
+
+    let accuratePreviewController = null;
+
+    async function renderAccuratePreview() {
+      if (document.body.classList.contains('ui-busy')) {
+        return;
+      }
+
+      const button = document.getElementById('btnAccuratePreview');
+      const image = document.getElementById('accuratePreviewImage');
+      const placeholder = document.getElementById('accuratePreviewPlaceholder');
+      const formData = new FormData(document.getElementById('mainForm'));
+
+      if (accuratePreviewController) {
+        accuratePreviewController.abort();
+      }
+      accuratePreviewController = new AbortController();
+
+      button.disabled = true;
+      button.textContent = 'Rendering...';
+
+      try {
+        const response = await fetch('/api/preview/frame', {
+          method: 'POST',
+          body: formData,
+          signal: accuratePreviewController.signal,
+        });
+
+        if (!response.ok) {
+          let errorText = 'Failed to render accurate preview.';
+          try {
+            const payload = await response.json();
+            errorText = payload.error || errorText;
+          } catch (_) {
+            // Keep default message if response is not JSON.
+          }
+          throw new Error(errorText);
+        }
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        image.src = blobUrl;
+        image.style.display = '';
+        placeholder.style.display = 'none';
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setRuntimeStatus('error', err.message || 'Failed to render accurate preview.');
+        }
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Render Accurate Preview';
+      }
+    }
+
+    document.getElementById('btnAccuratePreview').addEventListener('click', renderAccuratePreview);
 
     // ═══════════════════════════════════════════════════════════════════════
     // VIDEO PREVIEW MODAL
@@ -1451,14 +2182,304 @@
       if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
     });
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // FORM SUBMIT — loading overlay
-    // ═══════════════════════════════════════════════════════════════════════
-    document.getElementById('mainForm').addEventListener('submit', () => {
-      document.getElementById('processingOverlay').classList.add('active');
-      document.getElementById('btnSubmit').disabled = true;
-      document.getElementById('btnSubmit').textContent = '⏳ Processing...';
+    // Keep title synced live while editing in modal.
+    modalTitleInput.addEventListener('input', () => {
+      document.getElementById('video_title').value = modalTitleInput.value;
     });
+
+    function escapeHtml(text) {
+      return (text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function getEditableTitle(item) {
+      const explicit = (item.video_title || '').trim();
+      if (explicit) {
+        return explicit;
+      }
+
+      const filename = (item.filename || '').replace(/\.mp4$/i, '');
+      return filename.replace(/_clip_\d+$/i, '');
+    }
+
+    function setUiBusy(isBusy) {
+      document.body.classList.toggle('ui-busy', isBusy);
+      document.querySelectorAll('button').forEach((el) => {
+        el.disabled = isBusy;
+      });
+
+      document.querySelectorAll('[data-busy-lock="1"]').forEach((el) => {
+        el.style.pointerEvents = isBusy ? 'none' : '';
+        el.style.opacity = isBusy ? '0.6' : '';
+      });
+    }
+
+    function renderHistoryItem(item) {
+      const mp4 = item.filename;
+      const srt = item.subtitle_filename || mp4.replace(/\.mp4$/i, '.srt');
+      const subtitleText = item.subtitle_text || 'No subtitle content available.';
+      const editableTitle = getEditableTitle(item);
+
+      return `
+        <div class="result-item">
+          <video controls preload="metadata" playsinline>
+            <source src="/clips/${encodeURIComponent(mp4)}" type="video/mp4">
+          </video>
+          <div class="result-info">
+            <div class="filename">${escapeHtml(mp4)}</div>
+            <div class="result-actions">
+              <a data-busy-lock="1" href="/clips/${encodeURIComponent(mp4)}" download class="btn-download">⬇ Download MP4</a>
+              <a data-busy-lock="1" href="/clips/${encodeURIComponent(srt)}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">📄 Download SRT</a>
+            </div>
+            <div class="result-title-row">
+              <input class="result-title-input" type="text" value="${escapeHtml(editableTitle)}" data-title-input="1" data-filename="${escapeHtml(mp4)}">
+              <button type="button" class="btn-download" data-rename-btn="1" data-filename="${escapeHtml(mp4)}">💾 Save Title</button>
+              <button type="button" class="btn-download btn-danger" data-delete-btn="1" data-filename="${escapeHtml(mp4)}">🗑 Delete</button>
+            </div>
+            <div class="subtitle-panel">
+              <div class="subtitle-header">Subtitle Text (.srt)</div>
+              <pre class="subtitle-pre">${escapeHtml(subtitleText)}</pre>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function refreshHistory() {
+      const grid = document.getElementById('historyGrid');
+      try {
+        const response = await fetch('/api/history');
+        const data = await response.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+          grid.innerHTML = '<div class="result-empty">No generated clips yet.</div>';
+          return;
+        }
+
+        grid.innerHTML = data.map(renderHistoryItem).join('');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    document.getElementById('historyGrid').addEventListener('click', async (event) => {
+      const renameBtn = event.target.closest('[data-rename-btn="1"]');
+      if (renameBtn) {
+        const filename = renameBtn.getAttribute('data-filename') || '';
+        const parent = renameBtn.closest('.result-title-row');
+        const input = parent ? parent.querySelector('[data-title-input="1"]') : null;
+        const newTitle = input ? input.value.trim() : '';
+
+        if (!filename || !newTitle) {
+          setRuntimeStatus('error', 'Title baru tidak boleh kosong.');
+          return;
+        }
+
+        try {
+          setUiBusy(true);
+          const res = await fetch('/api/history/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, new_title: newTitle }),
+          });
+          const data = await res.json();
+
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || 'Failed to rename clip');
+          }
+
+          await refreshHistory();
+          setRuntimeStatus('success', `Judul berhasil diubah menjadi ${data.new_filename}`);
+        } catch (err) {
+          setRuntimeStatus('error', err.message || 'Failed to rename clip.');
+        } finally {
+          setUiBusy(false);
+        }
+        return;
+      }
+
+      const deleteBtn = event.target.closest('[data-delete-btn="1"]');
+      if (deleteBtn) {
+        const filename = deleteBtn.getAttribute('data-filename') || '';
+        if (!filename) {
+          return;
+        }
+
+        const confirmDelete = window.confirm(`Hapus clip ini secara permanen?\n${filename}`);
+        if (!confirmDelete) {
+          return;
+        }
+
+        try {
+          setUiBusy(true);
+          const res = await fetch(`/api/history/${encodeURIComponent(filename)}`, {
+            method: 'DELETE',
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || 'Failed to delete clip');
+          }
+
+          await refreshHistory();
+          setRuntimeStatus('success', `${filename} berhasil dihapus.`);
+        } catch (err) {
+          setRuntimeStatus('error', err.message || 'Failed to delete clip.');
+        } finally {
+          setUiBusy(false);
+        }
+      }
+    });
+
+    function setRuntimeStatus(kind, text) {
+      const box = document.getElementById('runtimeStatus');
+      box.style.display = '';
+      box.classList.remove('error', 'success');
+
+      if (kind === 'error') {
+        box.classList.add('error');
+        box.textContent = '⚠️ ' + text;
+      } else {
+        box.classList.add('success');
+        box.textContent = '✅ ' + text;
+      }
+    }
+
+    let lastJobLogs = '';
+
+    function renderJobLogs(logsText, errorText = '', forceShow = false) {
+      const logsCard = document.getElementById('jobLogsCard');
+      const logsViewer = document.getElementById('jobLogsViewer');
+      if (!logsCard || !logsViewer) {
+        return;
+      }
+
+      const normalized = (logsText || '').trim();
+      const errorLine = (errorText || '').trim();
+      let composed = normalized;
+
+      if (errorLine) {
+        composed = composed ? `${composed}\n\n[ERROR] ${errorLine}` : `[ERROR] ${errorLine}`;
+      }
+
+      if (forceShow || composed) {
+        logsCard.style.display = '';
+      }
+
+      if (!composed && !forceShow) {
+        return;
+      }
+
+      if (composed !== lastJobLogs) {
+        logsViewer.textContent = composed || 'Log sistem akan tampil di sini...';
+        logsViewer.scrollTop = logsViewer.scrollHeight;
+        lastJobLogs = composed;
+      }
+    }
+
+    async function pollJob(jobId) {
+      const progressCard = document.getElementById('jobProgressCard');
+      const fill = document.getElementById('jobProgressFill');
+      const text = document.getElementById('jobProgressText');
+      progressCard.style.display = '';
+      renderJobLogs('', '', true);
+
+      const interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/jobs/${jobId}`);
+          const data = await response.json();
+
+          if (data.error) {
+            clearInterval(interval);
+            renderJobLogs('', data.error, true);
+            setRuntimeStatus('error', data.error);
+            return;
+          }
+
+          const progress = Number(data.progress || 0);
+          fill.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+          text.textContent = data.message || data.status || 'Processing...';
+          renderJobLogs(data.logs || '', data.error || '', true);
+
+          if (data.status === 'completed') {
+            clearInterval(interval);
+            fill.style.width = '100%';
+            renderJobLogs(data.logs || '', '', true);
+            setRuntimeStatus('success', data.message || 'Background job completed.');
+            await refreshHistory();
+            setUiBusy(false);
+            document.getElementById('btnSubmit').textContent = '🚀 Process Video';
+          }
+
+          if (data.status === 'failed') {
+            clearInterval(interval);
+            renderJobLogs(data.logs || '', data.error || data.message || 'Background job failed.', true);
+            setRuntimeStatus('error', data.error || data.message || 'Background job failed.');
+            setUiBusy(false);
+            document.getElementById('btnSubmit').textContent = '🚀 Process Video';
+          }
+        } catch (err) {
+          clearInterval(interval);
+          renderJobLogs('', 'Failed to read background job status.', true);
+          setRuntimeStatus('error', 'Failed to read background job status.');
+          setUiBusy(false);
+          document.getElementById('btnSubmit').textContent = '🚀 Process Video';
+        }
+      }, 2000);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FORM SUBMIT — async background enqueue
+    // ═══════════════════════════════════════════════════════════════════════
+    document.getElementById('mainForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      if (document.body.classList.contains('ui-busy')) {
+        return;
+      }
+
+      if (modal.classList.contains('open')) {
+        const newTitle = modalTitleInput.value.trim();
+        document.getElementById('video_title').value = newTitle;
+      }
+
+      // Capture form values before disabling buttons.
+      const formData = new FormData(document.getElementById('mainForm'));
+
+      setUiBusy(true);
+      document.getElementById('btnSubmit').textContent = '⏳ Queueing...';
+      lastJobLogs = '';
+      renderJobLogs('Queueing job...', '', true);
+
+      try {
+        const response = await fetch('/api/jobs/submit', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to submit background job');
+        }
+
+        setRuntimeStatus('success', `Job queued (${data.mode}). Processing in background...`);
+        document.getElementById('btnSubmit').textContent = '⏳ Processing...';
+        renderJobLogs(`Job queued in mode: ${data.mode}`, '', true);
+        await pollJob(data.job_id);
+      } catch (err) {
+        renderJobLogs('', err.message || 'Failed to submit background job.', true);
+        setRuntimeStatus('error', err.message || 'Failed to submit background job.');
+        setUiBusy(false);
+        document.getElementById('btnSubmit').textContent = '🚀 Process Video';
+      }
+    });
+
+    // Keep history always up-to-date after page load/refresh.
+    updateOverlaySimulator();
+    refreshHistory();
   </script>
 </body>
 

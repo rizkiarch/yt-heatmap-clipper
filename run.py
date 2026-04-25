@@ -22,34 +22,40 @@ USE_SUBTITLE = True       # Enable auto subtitle using Faster-Whisper (4-5x fast
 WHISPER_MODEL = "large-v3"   # Whisper model size: tiny, base, small, medium, large-v3
 SAVE_RAW_SUBTITLE = True  # Save generated .srt subtitle file alongside output clip
 SOURCE_TAG_DEFAULT_INTERVAL = 30.0  # Seconds between each source tag animation cycle
+MASK_BUILTIN_SUBTITLE = True  # Mask lower area to hide hardcoded source subtitles before burning new subtitles.
+BUILTIN_SUBTITLE_MASK_HEIGHT_RATIO = 0.22
+BUILTIN_SUBTITLE_MASK_COLOR = "black@1.0"
+PREVIEW_STAGE_BASE_WIDTH = 280.0
+RENDER_STAGE_WIDTH = 720.0
+PREVIEW_TO_RENDER_SCALE = RENDER_STAGE_WIDTH / PREVIEW_STAGE_BASE_WIDTH
 
 # --- Subtitle Style Presets ---
 # Each preset maps to an FFmpeg `force_style` string for the subtitles filter.
 SUBTITLE_STYLES = {
     "modern": (
         "FontName=Arial,FontSize=14,Bold=1,"
-        "PrimaryColour=&HFFFFFF,OutlineColour=&H40000000,"
-        "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=50"
+        "PrimaryColour=&HFFFFFF,OutlineColour=&H78000000,"
+        "BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=50"
     ),
     "karaoke": (
         "FontName=Arial,FontSize=16,Bold=1,"
-        "PrimaryColour=&H00FFFF,OutlineColour=&H000000,"
-        "BorderStyle=1,Outline=3,Shadow=0,Alignment=2,MarginV=50"
+        "PrimaryColour=&H7DF9FF,OutlineColour=&H96000000,"
+        "BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=50"
     ),
     "minimal": (
         "FontName=Arial,FontSize=11,Bold=0,"
         "PrimaryColour=&HFFFFFF,OutlineColour=&H80000000,"
-        "BorderStyle=1,Outline=1,Shadow=1,Alignment=1,MarginV=30,MarginL=20"
+        "BorderStyle=1,Outline=1,Shadow=1,Alignment=2,MarginV=30"
     ),
     "bold": (
         "FontName=Impact,FontSize=20,Bold=1,"
-        "PrimaryColour=&HFFFFFF,OutlineColour=&H000000,"
-        "BorderStyle=1,Outline=4,Shadow=2,Alignment=2,MarginV=55"
+        "PrimaryColour=&HFFFFFF,OutlineColour=&H5A000000,"
+        "BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=55"
     ),
     "neon": (
         "FontName=Arial,FontSize=14,Bold=1,"
         "PrimaryColour=&H00FF88,OutlineColour=&HFF00AA,"
-        "BorderStyle=1,Outline=3,Shadow=2,ShadowColour=&H80FF00FF,"
+        "BorderStyle=1,Outline=2,Shadow=1,ShadowColour=&H80FF00FF,"
         "Alignment=2,MarginV=50"
     ),
 }
@@ -89,6 +95,53 @@ VIDEO_QUALITY_PRESETS = {
     "medium": {"resolution": 720, "crf": 23, "preset": "medium", "label": "Medium (720p)"},
     "fast": {"resolution": 720, "crf": 28, "preset": "ultrafast", "label": "Fast (720p)"},
 }
+
+# --- Overlay Control Presets ---
+OVERLAY_PRESETS = {
+    "compact": {
+        "subtitle_font_size": 11,
+        "subtitle_bottom_margin": 26,
+        "subtitle_max_chars": 24,
+        "source_tag_scale": 0.88,
+        "source_tag_position": "top-right",
+        "label": "Compact",
+    },
+    "professional": {
+        "subtitle_font_size": 13,
+        "subtitle_bottom_margin": 38,
+        "subtitle_max_chars": 30,
+        "source_tag_scale": 1.0,
+        "source_tag_position": "top-left",
+        "label": "Professional",
+    },
+    "bold": {
+        "subtitle_font_size": 16,
+        "subtitle_bottom_margin": 54,
+        "subtitle_max_chars": 36,
+        "source_tag_scale": 1.12,
+        "source_tag_position": "top-left",
+        "label": "Bold",
+    },
+}
+DEFAULT_OVERLAY_PRESET = "compact"
+
+
+def clamp_int(value, minimum, maximum, default):
+    """Clamp an integer value to safe bounds."""
+    try:
+        v = int(value)
+    except Exception:
+        v = int(default)
+    return max(int(minimum), min(int(maximum), v))
+
+
+def clamp_float(value, minimum, maximum, default):
+    """Clamp a float value to safe bounds."""
+    try:
+        v = float(value)
+    except Exception:
+        v = float(default)
+    return max(float(minimum), min(float(maximum), v))
 
 
 def sanitize_filename(title):
@@ -581,12 +634,23 @@ def _escape_drawtext_text(text):
     return escaped
 
 
-def build_source_tag_filter(channel_name, interval_seconds, style="classic"):
+def build_source_tag_filter(
+    channel_name,
+    interval_seconds,
+    style="classic",
+    scale=1.0,
+    position="top-left",
+):
     """
     Build FFmpeg filter that shows animated source tag on top-left.
     Supports style presets: classic, glass, minimal, neon.
     """
     interval = max(4.0, float(interval_seconds))
+    scale = clamp_float(scale, 0.60, 1.60, 1.0)
+    normalized_position = str(position or "top-left").strip().lower().replace("_", "-")
+    if normalized_position not in {"top-left", "top-right", "bottom-left", "bottom-right"}:
+        normalized_position = "top-left"
+
     channel = _escape_drawtext_text(channel_name)
 
     preset = SOURCE_TAG_STYLES.get(style, SOURCE_TAG_STYLES["classic"])
@@ -595,55 +659,213 @@ def build_source_tag_filter(channel_name, interval_seconds, style="classic"):
     text_color = preset["text_color"]
     accent_icon = preset.get("accent_icon", ">")
 
+    # Geometry follows Preview Lab baseline (280x497) then projected to 720x1280 render.
+    ratio = PREVIEW_TO_RENDER_SCALE
+    edge_offset = int(round(14 * ratio))
+    pad_x = int(round(10 * ratio * scale))
+    pad_y = int(round(7 * ratio * scale))
+    text_size = max(14, int(round(10.88 * ratio * scale)))
+    icon_box = max(26, int(round(18 * ratio * scale)))
+    icon_font = max(16, int(round(10.2 * ratio * scale)))
+    gap = max(8, int(round(6 * ratio * scale)))
+    # 28 chars keeps most channel names readable in one line at baseline scale.
+    text_box_width = max(260, int(round(28 * text_size * 0.58)))
+    box_h = max(icon_box + pad_y * 2, text_size + pad_y * 2)
+    box_w = pad_x * 2 + icon_box + gap + text_box_width
+
+    y_top = edge_offset
+    y_bottom = max(12, 1280 - box_h - edge_offset)
+    box_y = y_bottom if "bottom" in normalized_position else y_top
+
+    icon_x_offset = pad_x
+    icon_y = box_y + max(0, int(round((box_h - icon_box) / 2)))
+    icon_text_x_offset = icon_x_offset + max(2, int(round(icon_box * 0.24)))
+    icon_text_y = icon_y + max(0, int(round((icon_box - icon_font) / 2)))
+    source_x_offset = pad_x + icon_box + gap
+    source_y = box_y + max(0, int(round((box_h - text_size) / 2)))
+
     # Smooth slide-in/slide-out timing per cycle:
     # 0.00-0.42s in, 0.42-2.40s hold, 2.40-2.82s out.
-    x_expr = (
-        f"if(lt(mod(t\\,{interval:.2f})\\,0.42)\\,"
-        f"-440+464*sin((mod(t\\,{interval:.2f})/0.42)*PI/2)\\,"
-        f"if(lt(mod(t\\,{interval:.2f})\\,2.40)\\,24\\,"
-        f"if(lt(mod(t\\,{interval:.2f})\\,2.82)\\,"
-        f"24-464*sin(((mod(t\\,{interval:.2f})-2.40)/0.42)*PI/2)\\,-440)))"
-    )
+    is_right = "right" in normalized_position
+    if is_right:
+        x_hidden = "w+30"
+        x_hold = f"w-{box_w + edge_offset}"
+        x_expr = (
+            f"if(lt(mod(t\\,{interval:.2f})\\,0.42)\\,"
+            f"({x_hidden})-(({x_hidden})-({x_hold}))*sin((mod(t\\,{interval:.2f})/0.42)*PI/2)\\,"
+            f"if(lt(mod(t\\,{interval:.2f})\\,2.40)\\,({x_hold})\\,"
+            f"if(lt(mod(t\\,{interval:.2f})\\,2.82)\\,"
+            f"({x_hold})+(({x_hidden})-({x_hold}))*sin(((mod(t\\,{interval:.2f})-2.40)/0.42)*PI/2)\\,({x_hidden}))))"
+        )
+    else:
+        x_hidden = f"-{box_w + 30}"
+        x_hold = str(edge_offset)
+        x_expr = (
+            f"if(lt(mod(t\\,{interval:.2f})\\,0.42)\\,"
+            f"({x_hidden})+(({x_hold})-({x_hidden}))*sin((mod(t\\,{interval:.2f})/0.42)*PI/2)\\,"
+            f"if(lt(mod(t\\,{interval:.2f})\\,2.40)\\,({x_hold})\\,"
+            f"if(lt(mod(t\\,{interval:.2f})\\,2.82)\\,"
+            f"({x_hold})-(({x_hold})-({x_hidden}))*sin(((mod(t\\,{interval:.2f})-2.40)/0.42)*PI/2)\\,({x_hidden}))))"
+        )
 
     parts = ["format=yuv420p"]
 
     if style == "minimal":
-        # Text-only with subtle shadow, no boxes
+        # Minimal mode still keeps one-line source text to mirror fast preview layout.
         parts.append(
-            f"drawtext=text='YouTube':x='{x_expr}+24':y=64:fontsize=18:fontcolor={text_color}:shadowcolor=black@0.5:shadowx=1:shadowy=1"
-        )
-        parts.append(
-            f"drawtext=text='Source\\: {channel}':x='{x_expr}+24':y=90:fontsize=20:fontcolor={text_color}:shadowcolor=black@0.5:shadowx=1:shadowy=1"
+            f"drawtext=text='Source\\: {channel}':x='{x_expr}+{source_x_offset}':"
+            f"y={source_y}:fontsize={text_size}:fontcolor={text_color}:shadowcolor=black@0.45:shadowx=1:shadowy=1"
         )
     else:
         # Background box
         if box_color:
-            parts.append(f"drawbox=x='{x_expr}+10':y=52:w=425:h=78:color={box_color}:t=fill")
+            parts.append(f"drawbox=x='{x_expr}':y={box_y}:w={box_w}:h={box_h}:color={box_color}:t=fill")
 
-        # Accent bar
+        # Accent icon square
         if accent_color:
-            parts.append(f"drawbox=x='{x_expr}':y=56:w=5:h=70:color={accent_color}:t=fill")
-            parts.append(f"drawbox=x='{x_expr}+24':y=74:w=32:h=32:color={accent_color}:t=fill")
+            parts.append(
+                f"drawbox=x='{x_expr}+{icon_x_offset}':y={icon_y}:"
+                f"w={icon_box}:h={icon_box}:color={accent_color}:t=fill"
+            )
 
         # Icon/play symbol
         if accent_icon:
             parts.append(
-                f"drawtext=text='{_escape_drawtext_text(accent_icon)}':x='{x_expr}+35':y=78:fontsize=24:fontcolor={text_color}"
+                f"drawtext=text='{_escape_drawtext_text(accent_icon)}':x='{x_expr}+{icon_text_x_offset}':"
+                f"y={icon_text_y}:fontsize={icon_font}:fontcolor={text_color}"
             )
 
-        # "YouTube" label
+        # Channel/source line in one row to match Preview Lab.
         parts.append(
-            f"drawtext=text='YouTube':x='{x_expr}+66':y=79:fontsize=18:fontcolor={text_color}"
-        )
-        # Channel/source line
-        parts.append(
-            f"drawtext=text='Source\\: {channel}':x='{x_expr}+24':y=108:fontsize=20:fontcolor={text_color}"
+            f"drawtext=text='Source\\: {channel}':x='{x_expr}+{source_x_offset}':"
+            f"y={source_y}:fontsize={text_size}:fontcolor={text_color}"
         )
 
     return ",".join(parts)
 
 
-def generate_subtitle(video_file, subtitle_file):
+def _wrap_long_word(word, max_chars):
+    """Chunk a very long token so wrapping stays stable."""
+    chunks = []
+    while len(word) > max_chars:
+        chunks.append(word[:max_chars])
+        word = word[max_chars:]
+    if word:
+        chunks.append(word)
+    return chunks
+
+
+def wrap_subtitle_text(text, max_chars_per_line):
+    """Wrap subtitle text by character width while preserving readability."""
+    if not text:
+        return ""
+
+    max_chars = clamp_int(max_chars_per_line, 16, 64, 30)
+    normalized = " ".join(str(text).strip().split())
+    if len(normalized) <= max_chars:
+        return normalized
+
+    words = []
+    for token in normalized.split(" "):
+        if len(token) > max_chars:
+            words.extend(_wrap_long_word(token, max_chars))
+        else:
+            words.append(token)
+
+    lines = []
+    current = ""
+
+    for word in words:
+        if not current:
+            current = word
+            continue
+
+        candidate = f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+
+        lines.append(current)
+        current = word
+
+    if current:
+        lines.append(current)
+
+    return "\n".join(lines)
+
+
+def build_subtitle_force_style(style_key, font_size=None, bottom_margin=None):
+    """Build subtitle force_style string from preset + per-job overrides."""
+    base_style = SUBTITLE_STYLES.get(style_key, SUBTITLE_STYLES["modern"])
+
+    parsed = {}
+    ordered_keys = []
+    for part in base_style.split(","):
+        entry = part.strip()
+        if not entry or "=" not in entry:
+            continue
+        key, value = entry.split("=", 1)
+        key = key.strip()
+        parsed[key] = value.strip()
+        ordered_keys.append(key)
+
+    # UI sliders are tuned for Preview Lab; project them into 720x1280 render space.
+    preview_font = clamp_int(font_size, 9, 24, 12)
+    preview_margin = clamp_int(bottom_margin, 8, 120, 28)
+    render_font = clamp_int(round(preview_font * PREVIEW_TO_RENDER_SCALE), 14, 64, 26)
+    render_margin = clamp_int(round(preview_margin * PREVIEW_TO_RENDER_SCALE), 20, 320, 72)
+
+    parsed["FontSize"] = str(render_font)
+    parsed["MarginV"] = str(render_margin)
+
+    if "FontSize" not in ordered_keys:
+        ordered_keys.append("FontSize")
+    if "MarginV" not in ordered_keys:
+        ordered_keys.append("MarginV")
+
+    return ",".join([f"{key}={parsed[key]}" for key in ordered_keys if key in parsed])
+
+
+def _normalize_subtitle_segments(segments):
+    """
+    Normalize subtitle segments to avoid overlap and duplicated repeated lines.
+    """
+    normalized = []
+
+    for segment in segments:
+        text = (segment.text or "").strip()
+        if not text:
+            continue
+
+        try:
+            start = float(segment.start)
+            end = float(segment.end)
+        except Exception:
+            continue
+
+        if end <= start:
+            end = start + 0.5
+
+        if normalized:
+            prev = normalized[-1]
+
+            # Merge consecutive identical text when timestamps are touching/overlapping.
+            if text == prev["text"] and start <= (prev["end"] + 0.20):
+                prev["end"] = max(prev["end"], end)
+                continue
+
+            # Shift start forward a bit if it overlaps previous segment.
+            if start < prev["end"]:
+                start = prev["end"] + 0.01
+                if end <= start:
+                    end = start + 0.5
+
+        normalized.append({"start": start, "end": end, "text": text})
+
+    return normalized
+
+
+def generate_subtitle(video_file, subtitle_file, max_chars_per_line=30):
     """
     Generate subtitle file using Faster-Whisper for the given video.
     Returns True if successful, False otherwise.
@@ -658,14 +880,15 @@ def generate_subtitle(video_file, subtitle_file):
         
         print("  ✅ Model loaded. Transcribing audio (4-5x faster than standard Whisper)...")
         segments, info = model.transcribe(video_file, language="id")
+        normalized_segments = _normalize_subtitle_segments(list(segments))
         
         # Generate SRT format
         print("  Generating subtitle file...")
         with open(subtitle_file, "w", encoding="utf-8") as f:
-            for i, segment in enumerate(segments, start=1):
-                start_time = format_timestamp(segment.start)
-                end_time = format_timestamp(segment.end)
-                text = segment.text.strip()
+            for i, segment in enumerate(normalized_segments, start=1):
+                start_time = format_timestamp(segment["start"])
+                end_time = format_timestamp(segment["end"])
+                text = wrap_subtitle_text(segment["text"], max_chars_per_line)
                 
                 f.write(f"{i}\n")
                 f.write(f"{start_time} --> {end_time}\n")
@@ -702,6 +925,11 @@ def proses_satu_clip(
     source_style="classic",
     video_quality="medium",
     video_title=None,
+    subtitle_font_size=11,
+    subtitle_bottom_margin=26,
+    subtitle_max_chars=24,
+    source_tag_scale=0.88,
+    source_tag_position="top-right",
 ):
     """
     Download, crop, and export a single vertical clip
@@ -717,6 +945,11 @@ def proses_satu_clip(
         source_style: preset key from SOURCE_TAG_STYLES
         video_quality: preset key from VIDEO_QUALITY_PRESETS
         video_title: custom title for output filename (sanitized)
+        subtitle_font_size: per-job subtitle size override (px)
+        subtitle_bottom_margin: distance from bottom (px)
+        subtitle_max_chars: max chars per subtitle line
+        source_tag_scale: source tag size multiplier
+        source_tag_position: source tag corner position
     """
     start_original = item["start"]
     end_original = item["start"] + item["duration"]
@@ -768,6 +1001,7 @@ def proses_satu_clip(
     temp_file = f"temp_{index}.mp4"
     cropped_file = f"temp_cropped_{index}.mp4"
     source_file = f"temp_source_{index}.mp4"
+    masked_file = f"temp_masked_{index}.mp4"
     subtitle_file = f"temp_{index}.srt"
     output_file = os.path.join(OUTPUT_DIR, f"{base_name}.mp4")
     raw_subtitle_output = os.path.join(OUTPUT_DIR, f"{base_name}.srt")
@@ -888,7 +1122,13 @@ def proses_satu_clip(
 
         if use_source_tag:
             print("  Adding animated source tag...")
-            source_filter = build_source_tag_filter(source_channel, source_interval, style=source_style)
+            source_filter = build_source_tag_filter(
+                source_channel,
+                source_interval,
+                style=source_style,
+                scale=source_tag_scale,
+                position=source_tag_position,
+            )
             cmd_source = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", cropped_file,
@@ -911,8 +1151,39 @@ def proses_satu_clip(
 
         # Generate and burn subtitle if enabled
         if use_subtitle:
+            if MASK_BUILTIN_SUBTITLE:
+                print("  Applying subtitle mask on lower area...")
+                mask_ratio = min(max(BUILTIN_SUBTITLE_MASK_HEIGHT_RATIO, 0.05), 0.45)
+                mask_filter = (
+                    f"drawbox=x=0:y=ih*(1-{mask_ratio:.4f}):"
+                    f"w=iw:h=ih*{mask_ratio:.4f}:"
+                    f"color={BUILTIN_SUBTITLE_MASK_COLOR}:t=fill"
+                )
+                cmd_mask = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", final_input_file,
+                    "-vf", mask_filter,
+                    "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
+                    "-c:a", "copy",
+                    masked_file,
+                ]
+
+                try:
+                    subprocess.run(
+                        cmd_mask,
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    if os.path.exists(final_input_file):
+                        os.remove(final_input_file)
+                    final_input_file = masked_file
+                except subprocess.CalledProcessError:
+                    print("  Failed to apply subtitle mask, continuing without mask...")
+
             print("  Generating subtitle...")
-            if generate_subtitle(final_input_file, subtitle_file):
+            if generate_subtitle(final_input_file, subtitle_file, max_chars_per_line=subtitle_max_chars):
                 if SAVE_RAW_SUBTITLE and os.path.exists(subtitle_file):
                     try:
                         # Keep a permanent raw subtitle copy before burn step.
@@ -928,7 +1199,11 @@ def proses_satu_clip(
                 subtitle_path = abs_subtitle_path.replace("\\", "/").replace(":", "\\:")
                 
                 # Resolve subtitle style preset
-                sub_force_style = SUBTITLE_STYLES.get(subtitle_style, SUBTITLE_STYLES["modern"])
+                sub_force_style = build_subtitle_force_style(
+                    subtitle_style,
+                    font_size=subtitle_font_size,
+                    bottom_margin=subtitle_bottom_margin,
+                )
 
                 cmd_subtitle = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -969,7 +1244,7 @@ def proses_satu_clip(
 
     except subprocess.CalledProcessError as e:
         # Cleanup temp files
-        for f in [temp_file, cropped_file, source_file, subtitle_file]:
+        for f in [temp_file, cropped_file, source_file, masked_file, subtitle_file]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -981,7 +1256,7 @@ def proses_satu_clip(
         return False
     except Exception as e:
         # Cleanup temp files
-        for f in [temp_file, cropped_file, source_file, subtitle_file]:
+        for f in [temp_file, cropped_file, source_file, masked_file, subtitle_file]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
