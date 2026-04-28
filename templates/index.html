@@ -1375,10 +1375,277 @@
     .app-footer a:hover {
       text-decoration: underline;
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       SIDEBAR NAVIGATION
+       ═══════════════════════════════════════════════════════════════════════ */
+    .app-sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 260px;
+      height: 100vh;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid var(--border-subtle);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(-100%);
+      transition: transform var(--transition-base);
+      box-shadow: var(--shadow-lg);
+    }
+    .app-sidebar.open {
+      transform: translateX(0);
+    }
+    .app-sidebar.collapsed {
+      width: 64px;
+    }
+    .app-sidebar.collapsed .sidebar-logo-text,
+    .app-sidebar.collapsed .sidebar-text,
+    .app-sidebar.collapsed .sidebar-version {
+      display: none;
+    }
+    .app-sidebar.collapsed .sidebar-item {
+      justify-content: center;
+      padding: var(--space-md);
+    }
+    .app-sidebar.collapsed .sidebar-icon {
+      margin-right: 0;
+      font-size: 1.4rem;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-lg);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      overflow: hidden;
+    }
+    .sidebar-logo-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--gradient-hero);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .sidebar-logo-text {
+      font-size: 0.95rem;
+      font-weight: 700;
+      background: var(--gradient-hero);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      white-space: nowrap;
+    }
+    .sidebar-close {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      transition: all var(--transition-fast);
+      flex-shrink: 0;
+    }
+    .sidebar-close:hover {
+      background: var(--error-bg);
+      border-color: var(--error);
+      color: var(--error);
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: var(--space-md);
+      overflow-y: auto;
+    }
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      padding: var(--space-md) var(--space-lg);
+      margin-bottom: var(--space-xs);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: all var(--transition-fast);
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    .sidebar-item:hover {
+      background: var(--bg-surface-hover);
+      color: var(--text-primary);
+    }
+    .sidebar-item.active {
+      background: var(--accent-glow);
+      color: var(--accent-primary);
+      border: 1px solid var(--accent-primary);
+    }
+    .sidebar-icon {
+      font-size: 1.2rem;
+      width: 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .sidebar-text {
+      white-space: nowrap;
+    }
+
+    .sidebar-footer {
+      padding: var(--space-md);
+      border-top: 1px solid var(--border-subtle);
+      text-align: center;
+    }
+    .sidebar-version {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* Sidebar Overlay (mobile backdrop) */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+      opacity: 0;
+      transition: opacity var(--transition-base);
+    }
+    .sidebar-overlay.visible {
+      display: block;
+      opacity: 1;
+    }
+
+    /* Sidebar Toggle Button (hamburger) */
+    .sidebar-toggle {
+      position: fixed;
+      top: var(--space-md);
+      left: var(--space-md);
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      z-index: 998;
+      transition: all var(--transition-fast);
+    }
+    .sidebar-toggle:hover {
+      background: var(--bg-surface-hover);
+      color: var(--text-primary);
+      border-color: var(--border-hover);
+    }
+    .sidebar-toggle.visible {
+      display: flex;
+    }
+
+    /* Adjust app container for sidebar */
+    .app-container.with-sidebar {
+      margin-left: 260px;
+      max-width: calc(1240px - 260px);
+    }
+    .app-container.sidebar-collapsed {
+      margin-left: 64px;
+      max-width: calc(1240px - 64px);
+    }
+
+    /* Responsive sidebar */
+    @media (max-width: 768px) {
+      .app-sidebar {
+        width: 280px;
+      }
+      .app-container.with-sidebar,
+      .app-container.sidebar-collapsed {
+        margin-left: 0;
+        max-width: 100%;
+      }
+      .sidebar-toggle.visible {
+        display: flex;
+      }
+      .app-sidebar.collapsed {
+        width: 280px;
+      }
+      .app-sidebar.collapsed .sidebar-logo-text,
+      .app-sidebar.collapsed .sidebar-text,
+      .app-sidebar.collapsed .sidebar-version {
+        display: block;
+      }
+      .app-sidebar.collapsed .sidebar-item {
+        justify-content: flex-start;
+        padding: var(--space-md) var(--space-lg);
+      }
+      .app-sidebar.collapsed .sidebar-icon {
+        margin-right: var(--space-md);
+        font-size: 1.2rem;
+      }
+    }
   </style>
 </head>
 
 <body>
+  <!-- Sidebar Navigation -->
+  <aside class="app-sidebar" id="appSidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <span class="sidebar-logo-icon">🔥</span>
+        <span class="sidebar-logo-text">Heatmap Clipper</span>
+      </div>
+      <button class="sidebar-close" id="sidebarClose" aria-label="Close sidebar">✕</button>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="sidebar-item active" data-nav="dashboard">
+        <span class="sidebar-icon">📊</span>
+        <span class="sidebar-text">Dashboard</span>
+      </a>
+      <a href="#history" class="sidebar-item" data-nav="history">
+        <span class="sidebar-icon">📁</span>
+        <span class="sidebar-text">History</span>
+      </a>
+      <a href="#settings" class="sidebar-item" data-nav="settings">
+        <span class="sidebar-icon">⚙️</span>
+        <span class="sidebar-text">Settings</span>
+      </a>
+      <a href="#help" class="sidebar-item" data-nav="help">
+        <span class="sidebar-icon">ℹ️</span>
+        <span class="sidebar-text">Help</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-version">v1.0.0</div>
+    </div>
+  </aside>
+
+  <!-- Sidebar Overlay (mobile backdrop) -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar Toggle Button (mobile hamburger) -->
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+
   <div class="bg-mesh"></div>
 
   <!-- Processing overlay -->
@@ -1753,6 +2020,150 @@
       localStorage.setItem('yt-clipper-theme', next);
       themeBtn.textContent = next === 'dark' ? '☀️' : '🌙';
     });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SIDEBAR TOGGLE
+    // ═══════════════════════════════════════════════════════════════════════
+    const sidebar = document.getElementById('appSidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebarClose = document.getElementById('sidebarClose');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    const appContainer = document.querySelector('.app-container');
+    const SIDEBAR_COLLAPSED_KEY = 'yt-clipper-sidebar-collapsed';
+
+    function isMobile() {
+      return window.innerWidth <= 768;
+    }
+
+    function openSidebar() {
+      sidebar.classList.add('open');
+      sidebarOverlay.classList.add('visible');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeSidebar() {
+      sidebar.classList.remove('open');
+      sidebarOverlay.classList.remove('visible');
+      document.body.style.overflow = '';
+    }
+
+    function toggleSidebar() {
+      if (sidebar.classList.contains('open')) {
+        closeSidebar();
+      } else {
+        openSidebar();
+      }
+    }
+
+    function toggleCollapseSidebar() {
+      sidebar.classList.toggle('collapsed');
+      appContainer.classList.toggle('sidebar-collapsed');
+      appContainer.classList.remove('with-sidebar');
+      if (sidebar.classList.contains('collapsed')) {
+        appContainer.classList.add('sidebar-collapsed');
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'true');
+      } else {
+        appContainer.classList.add('with-sidebar');
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+      }
+    }
+
+    function initSidebar() {
+      // Restore collapsed state from localStorage (desktop only)
+      if (!isMobile()) {
+        const wasCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+        if (wasCollapsed) {
+          sidebar.classList.add('collapsed');
+          appContainer.classList.add('sidebar-collapsed');
+        } else {
+          appContainer.classList.add('with-sidebar');
+        }
+      }
+
+      // Show toggle button on mobile
+      if (isMobile()) {
+        sidebarToggle.classList.add('visible');
+      } else {
+        sidebar.classList.add('open');
+      }
+    }
+
+    // Event listeners
+    sidebarToggle.addEventListener('click', openSidebar);
+    sidebarClose.addEventListener('click', closeSidebar);
+    sidebarOverlay.addEventListener('click', closeSidebar);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sidebar.classList.contains('open')) {
+        closeSidebar();
+      }
+    });
+
+    // Handle window resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        const mobile = isMobile();
+        if (mobile) {
+          closeSidebar();
+          sidebarToggle.classList.add('visible');
+          sidebar.classList.remove('collapsed');
+          appContainer.classList.remove('with-sidebar', 'sidebar-collapsed');
+        } else {
+          sidebarToggle.classList.remove('visible');
+          const wasCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+          if (wasCollapsed) {
+            sidebar.classList.add('collapsed');
+            appContainer.classList.add('sidebar-collapsed');
+          } else {
+            appContainer.classList.add('with-sidebar');
+            sidebar.classList.add('open');
+          }
+        }
+      }, 150);
+    });
+
+    // Sidebar navigation active state
+    document.querySelectorAll('.sidebar-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const nav = item.getAttribute('data-nav');
+        document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+
+        // Handle navigation
+        if (nav === 'dashboard') {
+          e.preventDefault();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (nav === 'history') {
+          e.preventDefault();
+          const historyCard = document.getElementById('historyGrid')?.closest('.card');
+          if (historyCard) {
+            historyCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        } else if (nav === 'settings') {
+          e.preventDefault();
+          const settingsCard = document.getElementById('settingsToggle');
+          if (settingsCard) {
+            settingsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        } else if (nav === 'help') {
+          e.preventDefault();
+          // Could open a help modal or scroll to footer
+          const footer = document.querySelector('.app-footer');
+          if (footer) {
+            footer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+
+        // Close sidebar on mobile after navigation
+        if (isMobile()) {
+          closeSidebar();
+        }
+      });
+    });
+
+    initSidebar();
 
     // ═══════════════════════════════════════════════════════════════════════
     // PRESET CARD SELECTION
