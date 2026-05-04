@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block title %}Social Account — YT Heatmap Clipper{% endblock %}
+
+{% block content %}
+  <!-- Page Header -->
+  <header class="app-header" style="margin-bottom: var(--space-xl);">
+    <div class="app-logo">
+      <div class="app-logo-icon" style="font-size: 18px;">S</div>
+      <div>
+        <h1>Social Account</h1>
+        <span class="tagline">Manage your connected social media accounts</span>
+      </div>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Switch theme"></button>
+  </header>
+
+  <!-- Connected Accounts -->
+  <div class="card" style="margin-bottom: var(--space-lg);">
+    <div class="card-title"><span class="icon">🔗</span> Connected Accounts</div>
+    <div id="accountsList">
+      <div class="result-empty">No accounts connected yet. Add your first social media account below.</div>
+    </div>
+  </div>
+
+  <!-- Add Account Form -->
+  <div class="card">
+    <div class="card-title"><span class="icon">➕</span> Add New Account</div>
+    <form id="addAccountForm" style="margin-top: var(--space-md);">
+      <div class="form-workbench">
+        <div class="field-group">
+          <label class="field-label" for="accountPlatform">Platform</label>
+          <select class="field-input" id="accountPlatform" name="platform" required>
+            <option value="">Select platform...</option>
+            <option value="youtube">YouTube</option>
+            <option value="tiktok">TikTok</option>
+            <option value="instagram">Instagram</option>
+            <option value="facebook">Facebook</option>
+            <option value="twitter">X / Twitter</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="accountName">Account Name / Handle</label>
+          <input type="text" class="field-input" id="accountName" name="handle" placeholder="@username or channel name" required>
+        </div>
+      </div>
+      <div class="field-group" style="margin-top: var(--space-sm);">
+        <label class="field-label" for="accountToken">Access Token (optional)</label>
+        <input type="password" class="field-input" id="accountToken" name="token" placeholder="API key or access token for automated publishing">
+      </div>
+      <div class="actions-row">
+        <button type="submit" class="btn btn-primary">Add Account</button>
+      </div>
+    </form>
+  </div>
+
+  <footer class="app-footer">
+    YT Heatmap Clipper · Using Faster-Whisper & FFmpeg · <a href="https://github.com" target="_blank">GitHub</a>
+  </footer>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  // Load accounts from localStorage
+  function loadAccounts() {
+    const accounts = JSON.parse(localStorage.getItem('yt-clipper-accounts') || '[]');
+    const container = document.getElementById('accountsList');
+    if (accounts.length === 0) {
+      container.innerHTML = '<div class="result-empty">No accounts connected yet. Add your first social media account below.</div>';
+      return;
+    }
+    const platformIcons = {
+      youtube: '📺',
+      tiktok: '🎵',
+      instagram: '📷',
+      facebook: 'f',
+      twitter: '🐦'
+    };
+    container.innerHTML = accounts.map((acc, idx) => `
+      <div class="result-item" style="margin-bottom: var(--space-sm);">
+        <div style="width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--gradient-hero); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: white; font-weight: 700;">
+          ${platformIcons[acc.platform] || '•'}
+        </div>
+        <div class="result-info">
+          <div class="filename" style="text-transform: capitalize;">${acc.platform} — ${acc.handle}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${acc.token ? 'API token configured' : 'No token set'}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccount(${idx})" style="flex-shrink: 0;">Remove</button>
+      </div>
+    `).join('');
+  }
+
+  function deleteAccount(index) {
+    const accounts = JSON.parse(localStorage.getItem('yt-clipper-accounts') || '[]');
+    accounts.splice(index, 1);
+    localStorage.setItem('yt-clipper-accounts', JSON.stringify(accounts));
+    loadAccounts();
+  }
+
+  document.getElementById('addAccountForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const platform = document.getElementById('accountPlatform').value;
+    const handle = document.getElementById('accountName').value.trim();
+    const token = document.getElementById('accountToken').value.trim();
+    if (!platform || !handle) return;
+
+    const accounts = JSON.parse(localStorage.getItem('yt-clipper-accounts') || '[]');
+    accounts.push({ platform, handle, token, createdAt: new Date().toISOString() });
+    localStorage.setItem('yt-clipper-accounts', JSON.stringify(accounts));
+
+    document.getElementById('addAccountForm').reset();
+    loadAccounts();
+  });
+
+  loadAccounts();
+</script>
+{% endblock %}
