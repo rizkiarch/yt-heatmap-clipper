@@ -63,3 +63,5 @@ clips/
 temp_*.mp4
 temp_*.srt
 temp_cropped_*.mp4
+
+.env
