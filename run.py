@@ -1104,10 +1104,6 @@ def proses_satu_clip(
             report_progress(0, "Download failed")
             return False
         report_progress(25, "Video downloaded successfully")
-    except Exception as e:
-        print(f"Download failed after retries: {e}")
-        report_progress(0, f"Download failed: {str(e)}")
-        return False
 
         # Step 2: Crop video
         report_progress(35, "Cropping video...")
