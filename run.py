@@ -5,9 +5,16 @@ import sys
 import subprocess
 import requests
 import shutil
+import time
 from urllib.parse import urlparse, parse_qs
+from functools import wraps
 import warnings
 warnings.filterwarnings("ignore")
+
+# ── Retry Configuration ──────────────────────────────────────────────────────
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+RETRY_BACKOFF = 2  # multiplier
 
 OUTPUT_DIR = "clips"      # Directory where generated clips will be saved
 MAX_DURATION = 160         # Maximum duration (in seconds) for each clip
@@ -124,6 +131,42 @@ OVERLAY_PRESETS = {
     },
 }
 DEFAULT_OVERLAY_PRESET = "compact"
+
+
+def retry_on_failure(max_retries=None, retry_delay=None, exceptions=None):
+    """
+    Decorator for retrying functions on failure with exponential backoff.
+    Usage: @retry_on_failure(max_retries=3, retry_delay=2)
+    """
+    if max_retries is None:
+        max_retries = MAX_RETRIES
+    if retry_delay is None:
+        retry_delay = RETRY_DELAY
+    if exceptions is None:
+        exceptions = (Exception,)
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            delay = retry_delay
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries:
+                        print(f"⚠️  Attempt {attempt}/{max_retries} failed: {e}")
+                        print(f"   Retrying in {delay}s...")
+                        time.sleep(delay)
+                        delay *= RETRY_BACKOFF  # Exponential backoff
+                    else:
+                        print(f"❌ All {max_retries} attempts failed for {func.__name__}")
+
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 def clamp_int(value, minimum, maximum, default):
@@ -512,9 +555,40 @@ def ambil_fallback_segments(video_id, total_duration, metadata=None):
     return interval_results
 
 
+@retry_on_failure(max_retries=3, retry_delay=2, exceptions=(subprocess.CalledProcessError, Exception))
+def download_video_segment(video_id, start, end, output_file):
+    """
+    Download a specific segment of a YouTube video.
+    With retry mechanism for transient network failures.
+    """
+    cmd_download = [
+        sys.executable, "-m", "yt_dlp",
+        "--force-ipv4",
+        "--quiet", "--no-warnings",
+        "--downloader", "ffmpeg",
+        "--downloader-args",
+        f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
+        "-f",
+        "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "-o", output_file,
+        f"https://youtu.be/{video_id}"
+    ]
+
+    result = subprocess.run(
+        cmd_download,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    return os.path.exists(output_file)
+
+
+@retry_on_failure(max_retries=3, retry_delay=2, exceptions=(subprocess.CalledProcessError, Exception))
 def get_duration(video_id):
     """
     Retrieve the total duration of a YouTube video in seconds.
+    With retry mechanism for transient failures.
     """
     cmd = [
         sys.executable,
@@ -542,9 +616,11 @@ def get_duration(video_id):
     return 3600
 
 
+@retry_on_failure(max_retries=3, retry_delay=3, exceptions=(Exception,))
 def get_video_metadata(video_id):
     """
     Retrieve yt-dlp JSON metadata once so it can be reused.
+    With retry mechanism for transient failures.
     """
     cmd = [
         sys.executable,
@@ -930,11 +1006,12 @@ def proses_satu_clip(
     subtitle_max_chars=24,
     source_tag_scale=0.88,
     source_tag_position="top-right",
+    progress_callback=None,
 ):
     """
     Download, crop, and export a single vertical clip
     based on a heatmap segment.
-    
+
     Args:
         crop_mode: "default", "split_left", "split_right", or "blur_center"
         use_subtitle: whether to generate and burn subtitle
@@ -950,7 +1027,14 @@ def proses_satu_clip(
         subtitle_max_chars: max chars per subtitle line
         source_tag_scale: source tag size multiplier
         source_tag_position: source tag corner position
+        progress_callback: optional callback function(progress_percent, message) for live updates
     """
+    def report_progress(percent, message):
+        if progress_callback:
+            try:
+                progress_callback(percent, message)
+            except Exception:
+                pass  # Ignore callback errors
     start_original = item["start"]
     end_original = item["start"] + item["duration"]
 
@@ -1011,48 +1095,26 @@ def proses_satu_clip(
         f"({int(start)}s - {int(end)}s, padding {PADDING}s)"
     )
 
-    cmd_download = [
-        sys.executable, "-m", "yt_dlp",
-        "--force-ipv4",
-        "--quiet", "--no-warnings",
-        "--downloader", "ffmpeg",
-        "--downloader-args",
-        f"ffmpeg_i:-ss {start} -to {end} -hide_banner -loglevel error",
-        "-f",
-        "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "-o", temp_file,
-        f"https://youtu.be/{video_id}"
-    ]
-
+    # Step 1: Download video segment (with retry)
+    report_progress(10, "Downloading video segment...")
     try:
-        result = subprocess.run(
-            cmd_download,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-
-        if not os.path.exists(temp_file):
+        download_success = download_video_segment(video_id, start, end, temp_file)
+        if not download_success:
             print("Failed to download video segment.")
+            report_progress(0, "Download failed")
             return False
+        report_progress(25, "Video downloaded successfully")
+    except Exception as e:
+        print(f"Download failed after retries: {e}")
+        report_progress(0, f"Download failed: {str(e)}")
+        return False
 
-        # Build video filter based on crop_mode
-        # First, crop the video to cropped_file
+        # Step 2: Crop video
+        report_progress(35, "Cropping video...")
+
         if crop_mode == "default":
-            # Standard center crop - ambil dari tengah video
-            cmd_crop = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", temp_file,
-                "-vf", "scale=-2:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2",
-                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
-                "-c:a", "aac", "-b:a", "128k",
-                cropped_file
-            ]
+            vf = "scale=-2:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2"
         elif crop_mode == "split_left":
-            # Split crop: 
-            # - Top: konten game dari tengah-tengah video (960px)
-            # - Bottom: facecam dari kiri bawah video asli (320px)
             vf = (
                 f"scale=-2:1280[scaled];"
                 f"[scaled]split=2[s1][s2];"
@@ -1060,19 +1122,7 @@ def proses_satu_clip(
                 f"[s2]crop=720:{BOTTOM_HEIGHT}:0:ih-{BOTTOM_HEIGHT}[bottom];"
                 f"[top][bottom]vstack=inputs=2[out]"
             )
-            cmd_crop = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", temp_file,
-                "-filter_complex", vf,
-                "-map", "[out]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
-                "-c:a", "aac", "-b:a", "128k",
-                cropped_file
-            ]
         elif crop_mode == "split_right":
-            # Split crop: 
-            # - Top: konten game dari tengah-tengah video (960px)
-            # - Bottom: facecam dari kanan bawah video asli (320px)
             vf = (
                 f"scale=-2:1280[scaled];"
                 f"[scaled]split=2[s1][s2];"
@@ -1080,48 +1130,41 @@ def proses_satu_clip(
                 f"[s2]crop=720:{BOTTOM_HEIGHT}:iw-720:ih-{BOTTOM_HEIGHT}[bottom];"
                 f"[top][bottom]vstack=inputs=2[out]"
             )
-            cmd_crop = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", temp_file,
-                "-filter_complex", vf,
-                "-map", "[out]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
-                "-c:a", "aac", "-b:a", "128k",
-                cropped_file
-            ]
         elif crop_mode == "blur_center":
-            # Keep the original 16:9 frame in the middle and fill top/bottom with blurred video.
             vf = (
                 "[0:v]scale=720:1280:force_original_aspect_ratio=increase,"
                 "crop=720:1280,boxblur=20:10[bg];"
                 "[0:v]setsar=1,scale=720:405[fg];"
                 "[bg][fg]overlay=0:(H-h)/2[out]"
             )
-            cmd_crop = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", temp_file,
-                "-filter_complex", vf,
-                "-map", "[out]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", q_preset, "-crf", q_crf,
-                "-c:a", "aac", "-b:a", "128k",
-                cropped_file
-            ]
+        else:
+            vf = "scale=-2:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2"
 
-        print("  Cropping video...")
-        result = subprocess.run(
-            cmd_crop,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        cmd_crop = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", temp_file,
+            "-vf" if "split" not in vf else "-filter_complex", vf,
+            "-map", "[out]" if "split" in vf else "0:v",
+            "-map", "0:a?" if "split" in vf else "-c:a",
+        ]
+        if "split" in vf:
+            cmd_crop.extend(["-c:v", "libx264", "-preset", "ultrafast" if crop_mode == "split_left" else q_preset, "-crf", "26" if crop_mode == "split_left" else q_crf, "-c:a", "aac", "-b:a", "128k", cropped_file])
+        else:
+            cmd_crop.extend(["-c:v", "libx264", "-preset", q_preset, "-crf", q_crf, "-c:a", "aac", "-b:a", "128k", cropped_file])
+
+        try:
+            subprocess.run(cmd_crop, check=True, capture_output=True, text=True)
+            report_progress(50, "Video cropped successfully")
+        except subprocess.CalledProcessError as e:
+            print(f"Crop failed: {e.stderr}")
+            report_progress(0, "Crop failed")
+            return False
 
         os.remove(temp_file)
-
         final_input_file = cropped_file
 
         if use_source_tag:
-            print("  Adding animated source tag...")
+            report_progress(55, "Adding animated source tag...")
             source_filter = build_source_tag_filter(
                 source_channel,
                 source_interval,
@@ -1138,13 +1181,12 @@ def proses_satu_clip(
                 source_file
             ]
 
-            result = subprocess.run(
-                cmd_source,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            try:
+                subprocess.run(cmd_source, check=True, capture_output=True, text=True)
+                report_progress(60, "Source tag added")
+            except subprocess.CalledProcessError:
+                print("  Failed to add source tag, continuing without...")
+                report_progress(60, "Source tag skipped")
 
             os.remove(cropped_file)
             final_input_file = source_file
@@ -1152,7 +1194,7 @@ def proses_satu_clip(
         # Generate and burn subtitle if enabled
         if use_subtitle:
             if MASK_BUILTIN_SUBTITLE:
-                print("  Applying subtitle mask on lower area...")
+                report_progress(62, "Applying subtitle mask...")
                 mask_ratio = min(max(BUILTIN_SUBTITLE_MASK_HEIGHT_RATIO, 0.05), 0.45)
                 mask_filter = (
                     f"drawbox=x=0:y=ih*(1-{mask_ratio:.4f}):"
@@ -1169,36 +1211,30 @@ def proses_satu_clip(
                 ]
 
                 try:
-                    subprocess.run(
-                        cmd_mask,
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                    )
+                    subprocess.run(cmd_mask, check=True, capture_output=True, text=True)
                     if os.path.exists(final_input_file):
                         os.remove(final_input_file)
                     final_input_file = masked_file
+                    report_progress(65, "Subtitle mask applied")
                 except subprocess.CalledProcessError:
                     print("  Failed to apply subtitle mask, continuing without mask...")
+                    report_progress(65, "Subtitle mask skipped")
 
-            print("  Generating subtitle...")
+            report_progress(67, "Generating subtitle with AI...")
             if generate_subtitle(final_input_file, subtitle_file, max_chars_per_line=subtitle_max_chars):
+                report_progress(80, "Subtitle generated")
+
                 if SAVE_RAW_SUBTITLE and os.path.exists(subtitle_file):
                     try:
-                        # Keep a permanent raw subtitle copy before burn step.
                         shutil.copy2(subtitle_file, raw_subtitle_output)
                         print(f"  Raw subtitle saved: {raw_subtitle_output}")
                     except Exception as copy_error:
                         print(f"  Failed to save raw subtitle: {str(copy_error)}")
 
-                print("  Burning subtitle to video...")
-                # Get absolute path for subtitle file
+                report_progress(85, "Burning subtitle to video...")
                 abs_subtitle_path = os.path.abspath(subtitle_file)
-                # Escape for FFmpeg: replace \ with / and escape special chars
                 subtitle_path = abs_subtitle_path.replace("\\", "/").replace(":", "\\:")
-                
-                # Resolve subtitle style preset
+
                 sub_force_style = build_subtitle_force_style(
                     subtitle_style,
                     font_size=subtitle_font_size,
@@ -1213,32 +1249,27 @@ def proses_satu_clip(
                     "-c:a", "copy",
                     output_file
                 ]
-                
-                try:
-                    result = subprocess.run(
-                        cmd_subtitle,
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True
-                    )
 
+                try:
+                    subprocess.run(cmd_subtitle, check=True, capture_output=True, text=True)
+                    report_progress(95, "Subtitle burned")
                     os.remove(final_input_file)
                 except subprocess.CalledProcessError:
-                    # If subtitle burning fails, keep processing with video only.
                     print("  Failed to burn subtitle, continuing with non-burned video...")
+                    report_progress(95, "Subtitle burn failed, using raw video")
                     os.rename(final_input_file, output_file)
 
                 if os.path.exists(subtitle_file):
                     os.remove(subtitle_file)
             else:
-                # If subtitle generation failed, use cropped file as output
                 print("  Subtitle generation failed, continuing without subtitle...")
+                report_progress(95, "Subtitle generation failed")
                 os.rename(final_input_file, output_file)
         else:
-            # No subtitle, rename cropped file to output
+            report_progress(90, "Finalizing video...")
             os.rename(final_input_file, output_file)
 
+        report_progress(100, "Clip successfully generated!")
         print("Clip successfully generated.")
         return True
 

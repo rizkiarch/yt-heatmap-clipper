@@ -3,7 +3,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import json
 from io import BytesIO
+from functools import lru_cache
 
 from flask import Flask, render_template, request, send_from_directory, abort, jsonify, send_file, redirect, url_for
 
@@ -16,16 +18,92 @@ from job_service import (
     init_job_db,
     process_job,
     rename_history_entry,
+    update_job,
 )
 from queue_client import publish_job_message
 
+# WebSocket support for real-time progress updates
+socketio = SocketIO(cors_allowed_origins="*", async_mode="threading")
+
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.urandom(24).hex()
 
 ASYNC_ENABLED = os.getenv("ASYNC_ENABLED", "1") == "1"
 ASYNC_FALLBACK_SYNC = os.getenv("ASYNC_FALLBACK_SYNC", "1") == "1"
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "yt_heatmap_clipper_jobs")
 
 init_job_db()
+socketio.init_app(app)
+
+# Store job listeners for WebSocket broadcasts
+job_listeners = {}  # job_id -> list of socket sessions
+
+# WebSocket event handlers
+@socketio.on("connect")
+def handle_connect():
+    print(f"Client connected: {request.sid}")
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    # Clean up listener from all jobs
+    for job_id in list(job_listeners.keys()):
+        if request.sid in job_listeners[job_id]:
+            job_listeners[job_id].remove(request.sid)
+            if not job_listeners[job_id]:
+                del job_listeners[job_id]
+    print(f"Client disconnected: {request.sid}")
+
+@socketio.on("subscribe_job")
+def handle_subscribe(data):
+    """Subscribe to job progress updates"""
+    job_id = data.get("job_id")
+    if job_id:
+        if job_id not in job_listeners:
+            job_listeners[job_id] = []
+        if request.sid not in job_listeners[job_id]:
+            job_listeners[job_id].append(request.sid)
+        # Send current job status immediately
+        job = get_job(job_id)
+        if job:
+            emit("job_update", {
+                "job_id": job_id,
+                "status": job.get("status"),
+                "progress": job.get("progress"),
+                "message": job.get("message"),
+                "error": job.get("error"),
+                "logs": job.get("logs", ""),
+            })
+            print(f"Client {request.sid} subscribed to job {job_id}")
+
+@socketio.on("unsubscribe_job")
+def handle_unsubscribe(data):
+    """Unsubscribe from job progress updates"""
+    job_id = data.get("job_id")
+    if job_id and job_id in job_listeners:
+        if request.sid in job_listeners[job_id]:
+            job_listeners[job_id].remove(request.sid)
+            if not job_listeners[job_id]:
+                del job_listeners[job_id]
+
+def broadcast_job_update(job_id, **fields):
+    """Broadcast job update to all subscribed clients"""
+    if job_id not in job_listeners:
+        return
+
+    data = {"job_id": job_id}
+    for key in ["status", "progress", "message", "error", "logs"]:
+        if key in fields:
+            data[key] = fields[key]
+
+    for sid in job_listeners.get(job_id, []):
+        try:
+            socketio.emit("job_update", data, room=sid)
+        except Exception as e:
+            print(f"Failed to broadcast to {sid}: {e}")
+
+# Register WebSocket broadcast function in job_service
+from job_service import set_websocket_broadcast_func
+set_websocket_broadcast_func(broadcast_job_update)
 
 
 def _start_local_background_job(job_id, payload):
@@ -520,4 +598,5 @@ def social_account():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    # Use SocketIO run method for WebSocket support
+    socketio.run(app, host="127.0.0.1", port=5000, debug=False, allow_unsafe_werkzeug=True)

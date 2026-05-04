@@ -81,7 +81,16 @@ def create_job(payload):
     return job_id
 
 
+# WebSocket broadcast function (set by app.py at runtime)
+_websocket_broadcast_func = None
+
+def set_websocket_broadcast_func(func):
+    """Set the WebSocket broadcast function from app.py"""
+    global _websocket_broadcast_func
+    _websocket_broadcast_func = func
+
 def update_job(job_id, **fields):
+    """Update job status and optionally broadcast via WebSocket"""
     if not fields:
         return
 
@@ -97,6 +106,13 @@ def update_job(job_id, **fields):
         conn.commit()
     finally:
         conn.close()
+
+    # Broadcast via WebSocket if function is set
+    if _websocket_broadcast_func:
+        try:
+            _websocket_broadcast_func(job_id, **fields)
+        except Exception as e:
+            print(f"WebSocket broadcast error: {e}")
 
 
 def get_job(job_id):
@@ -351,6 +367,13 @@ def process_job(job_id, payload):
     """
     buffer = io.StringIO()
 
+    # Progress callback for real-time updates
+    def job_progress_callback(percent, message):
+        try:
+            update_job(job_id, progress=percent, message=message)
+        except Exception:
+            pass
+
     try:
         data = _validate_job_payload(payload)
         update_job(job_id, status="processing", progress=3.0, message="Checking dependencies", error="")
@@ -419,6 +442,7 @@ def process_job(job_id, payload):
                     data["subtitle_max_chars"],
                     data["source_tag_scale"],
                     data["source_tag_position"],
+                    progress_callback=job_progress_callback,
                 )
 
                 if ok:
