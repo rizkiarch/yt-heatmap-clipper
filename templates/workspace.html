@@ -1,0 +1,367 @@
+{% extends 'base.html' %}
+
+{% block title %}Workspace — YT Heatmap Clipper{% endblock %}
+
+{% block body_extra %}
+<!-- Processing overlay -->
+  <div class="processing-overlay" id="processingOverlay">
+    <div class="spinner"></div>
+    <div class="processing-text">Processing video clips…</div>
+    <div style="color: var(--text-muted); font-size: 0.8rem;">This may take a few minutes</div>
+  </div>
+
+  <!-- Video Preview Modal -->
+  <div class="modal-backdrop" id="videoModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">Video Preview</h2>
+        <button class="modal-close" id="modalClose" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-player-wrapper">
+          <iframe id="modalPlayer" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Video Title (editable)</label>
+          <input type="text" class="field-input" id="modalTitleInput" placeholder="Edit video title for filename...">
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+    <header class="app-header">
+      <div class="app-logo">
+        <div class="app-logo-icon">🔥</div>
+        <div>
+          <h1>Heatmap Clipper</h1>
+          <span class="tagline">Extract viral clips from YouTube</span>
+        </div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Switch theme">🌙</button>
+    </header>
+
+    <form method="post" id="mainForm">
+      <!-- ── URL Input Card ── -->
+      <div class="card">
+        <div class="card-title"><span class="icon">🔗</span> YouTube URL</div>
+        <div class="field-group">
+          <div class="url-input-group">
+            <input id="url" name="url" type="text" class="field-input"
+                   placeholder="https://www.youtube.com/watch?v=..."
+                   value="{{ data.url }}" required autocomplete="off">
+            <button type="button" class="btn-fetch" id="btnFetch" title="Fetch video info">🔍</button>
+          </div>
+        </div>
+
+        <!-- Video Info Preview (shown after fetch) -->
+        <div class="video-info" id="videoInfo">
+          <div class="video-info-thumb" id="videoThumb" title="Click to preview">
+            <img id="thumbImg" src="" alt="Video thumbnail">
+            <div class="play-overlay">▶</div>
+          </div>
+          <div class="video-info-details">
+            <div class="video-info-title" id="videoTitle">—</div>
+            <div class="video-info-meta">
+              <span class="meta-chip" id="channelChip">📺 —</span>
+              <span class="meta-chip" id="durationChip">⏱ —</span>
+              <span class="meta-chip" id="viewsChip">👁 —</span>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 10px" id="btnPreview">▶ Preview Video</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-workbench">
+      <!-- ── Settings Card ── -->
+      <div class="card settings-card">
+        <div class="collapsible-header open" id="settingsToggle">
+          <div class="card-title" style="margin-bottom:0"><span class="icon">⚙️</span> Settings</div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="collapsible-body open" id="settingsBody">
+          <!-- Video Title -->
+          <div class="field-group" style="margin-top: var(--space-md);">
+            <label class="field-label" for="video_title">Output Filename</label>
+            <input id="video_title" name="video_title" type="text" class="field-input"
+                   placeholder="Auto-generated from YouTube title"
+                   value="{{ data.video_title }}">
+          </div>
+
+          <!-- Crop Mode -->
+          <div class="section-divider">Crop Mode</div>
+          <div class="crop-grid" id="cropGrid">
+            <label class="crop-card {% if data.crop_mode == 'default' %}selected{% endif %}">
+              <input type="radio" name="crop_mode" value="default" {% if data.crop_mode == 'default' %}checked{% endif %}>
+              <div class="crop-icon">📱</div>
+              <div class="crop-label">Center Crop</div>
+            </label>
+            <label class="crop-card {% if data.crop_mode == 'split_left' %}selected{% endif %}">
+              <input type="radio" name="crop_mode" value="split_left" {% if data.crop_mode == 'split_left' %}checked{% endif %}>
+              <div class="crop-icon">⬅️</div>
+              <div class="crop-label">Split Left</div>
+            </label>
+            <label class="crop-card {% if data.crop_mode == 'split_right' %}selected{% endif %}">
+              <input type="radio" name="crop_mode" value="split_right" {% if data.crop_mode == 'split_right' %}checked{% endif %}>
+              <div class="crop-icon">➡️</div>
+              <div class="crop-label">Split Right</div>
+            </label>
+            <label class="crop-card {% if data.crop_mode == 'blur_center' %}selected{% endif %}">
+              <input type="radio" name="crop_mode" value="blur_center" {% if data.crop_mode == 'blur_center' %}checked{% endif %}>
+              <div class="crop-icon">🌫️</div>
+              <div class="crop-label">Blur Center</div>
+            </label>
+          </div>
+
+          <!-- Video Quality -->
+          <div class="section-divider">Video Quality</div>
+          <div class="quality-grid" id="qualityGrid">
+            {% for key, q in quality_presets.items() %}
+            <label class="quality-card {% if data.video_quality == key %}selected{% endif %}">
+              <input type="radio" name="video_quality" value="{{ key }}" {% if data.video_quality == key %}checked{% endif %}>
+              <div class="q-label">{{ q.label }}</div>
+              <div class="q-desc">CRF {{ q.crf }} · {{ q.preset }}</div>
+            </label>
+            {% endfor %}
+          </div>
+
+          <div class="section-divider">Overlay Presets</div>
+          <input type="hidden" name="overlay_preset" id="overlayPresetInput" value="{{ data.overlay_preset }}">
+          <div class="overlay-preset-grid" id="overlayPresetGrid">
+            {% for key, preset in overlay_presets.items() %}
+            <label class="preset-card {% if data.overlay_preset == key %}selected{% endif %}" data-overlay-preset="{{ key }}">
+              <input type="radio" name="overlay_preset_visual" value="{{ key }}" {% if data.overlay_preset == key %}checked{% endif %}>
+              <div class="preview-text">{{ preset.label }}</div>
+              <div class="preset-label">{{ key }}</div>
+              <div class="preset-note">Subtitle + source tuned</div>
+            </label>
+            {% endfor %}
+          </div>
+
+          <!-- Subtitle Section -->
+          <div class="section-divider">Subtitles</div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Auto Subtitle</div>
+              <div class="toggle-sublabel">Faster-Whisper (AI transcription)</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" name="use_subtitle" id="useSubtitle" {% if data.use_subtitle %}checked{% endif %}>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div id="subtitleOptions" {% if not data.use_subtitle %}style="display:none"{% endif %}>
+            <label class="field-label" style="margin-top: var(--space-sm)">Subtitle Style</label>
+            <div class="preset-grid" id="subtitleGrid">
+              {% for style in subtitle_styles %}
+              <label class="preset-card sub-{{ style }} {% if data.subtitle_style == style %}selected{% endif %}">
+                <input type="radio" name="subtitle_style" value="{{ style }}" {% if data.subtitle_style == style %}checked{% endif %}>
+                <div class="preview-text">Abc</div>
+                <div class="preset-label">{{ style }}</div>
+              </label>
+              {% endfor %}
+            </div>
+
+            <div class="field-group" style="margin-top: var(--space-md)">
+              <label class="field-label">Subtitle Size</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="subtitle_font_size" id="subtitleFontSize" min="9" max="24" step="1" value="{{ data.subtitle_font_size|int }}">
+                <span class="slider-value" id="subtitleFontSizeValue">{{ data.subtitle_font_size|int }}px</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Bottom Offset</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="subtitle_bottom_margin" id="subtitleBottomMargin" min="8" max="120" step="1" value="{{ data.subtitle_bottom_margin|int }}">
+                <span class="slider-value" id="subtitleBottomMarginValue">{{ data.subtitle_bottom_margin|int }}px</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Max Chars / Line</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="subtitle_max_chars" id="subtitleMaxChars" min="16" max="64" step="1" value="{{ data.subtitle_max_chars|int }}">
+                <span class="slider-value" id="subtitleMaxCharsValue">{{ data.subtitle_max_chars|int }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Source Tag Section -->
+          <div class="section-divider">Source Tag</div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Source Tag Overlay</div>
+              <div class="toggle-sublabel">Animated channel attribution</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" name="use_source_tag" id="useSourceTag" {% if data.use_source_tag %}checked{% endif %}>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div id="sourceOptions" {% if not data.use_source_tag %}style="display:none"{% endif %}>
+            <label class="field-label" style="margin-top: var(--space-sm)">Source Style</label>
+            <div class="preset-grid" id="sourceGrid">
+              {% for style in source_styles %}
+              <label class="preset-card {% if data.source_style == style %}selected{% endif %}">
+                <input type="radio" name="source_style" value="{{ style }}" {% if data.source_style == style %}checked{% endif %}>
+                <div class="preview-text" style="font-size: 0.7rem;">▶ YT</div>
+                <div class="preset-label">{{ style }}</div>
+              </label>
+              {% endfor %}
+            </div>
+
+            <div class="field-group" style="margin-top: var(--space-md)">
+              <label class="field-label">Animation Interval</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="source_interval" id="sourceInterval"
+                       min="5" max="120" step="1" value="{{ data.source_interval|int }}">
+                <span class="slider-value" id="intervalValue">{{ data.source_interval|int }}s</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Source Tag Scale</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" name="source_tag_scale" id="sourceTagScale" min="0.60" max="1.60" step="0.01" value="{{ '%.2f'|format(data.source_tag_scale) }}">
+                <span class="slider-value" id="sourceTagScaleValue">{{ '%.2f'|format(data.source_tag_scale) }}x</span>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="sourceTagPosition">Source Tag Position</label>
+              <select class="field-input" name="source_tag_position" id="sourceTagPosition">
+                <option value="top-left" {% if data.source_tag_position == 'top-left' %}selected{% endif %}>Top Left</option>
+                <option value="top-right" {% if data.source_tag_position == 'top-right' %}selected{% endif %}>Top Right</option>
+                <option value="bottom-left" {% if data.source_tag_position == 'bottom-left' %}selected{% endif %}>Bottom Left</option>
+                <option value="bottom-right" {% if data.source_tag_position == 'bottom-right' %}selected{% endif %}>Bottom Right</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="overlayPreviewCard">
+        <div class="card-title"><span class="icon">🎛️</span> Overlay Preview Lab</div>
+        <div class="preview-mode-row">
+          <span class="preview-mode-chip fast">Fast Simulator</span>
+          <span class="preview-mode-chip accurate">Accurate FFmpeg Frame</span>
+        </div>
+        <div class="preview-lab-grid">
+          <div>
+            <div class="preview-stage" id="previewStage">
+              <img id="previewBgImage" class="preview-bg-image" src="" alt="Preview background" style="display:none">
+              <div class="preview-source-tag" id="previewSourceTag">
+                <span class="preview-source-accent">▶</span>
+                <span id="previewSourceText">Source: Channel</span>
+              </div>
+              <div class="preview-subtitle" id="previewSubtitle" data-style="modern">Contoh subtitle untuk cek ukuran dan posisi.</div>
+            </div>
+            <div class="preview-caption">
+              Fast Simulator: update instan untuk posisi, ukuran, dan style overlay.
+            </div>
+            <div class="preview-help">
+              Simulator cepat dipakai untuk tuning UI. Gunakan mode Accurate untuk melihat frame FFmpeg yang lebih dekat ke hasil video final.
+            </div>
+          </div>
+
+          <div>
+            <div class="field-group">
+              <label class="field-label" for="previewSubtitleText">Preview Subtitle Text</label>
+              <textarea id="previewSubtitleText" name="preview_subtitle_text" class="field-input preview-textarea" placeholder="Teks subtitle untuk simulasi dan accurate preview...">{{ data.preview_subtitle_text }}</textarea>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Accurate Frame Time</label>
+              <div class="slider-group">
+                <input type="range" class="slider-input" id="previewTime" name="preview_time" min="0" max="90" step="1" value="{{ data.preview_time|int }}">
+                <span class="slider-value" id="previewTimeValue">{{ data.preview_time|int }}s</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-block" id="btnAccuratePreview">Render Accurate Preview</button>
+            <div class="accurate-preview-title">Accurate Frame Output</div>
+            <div class="accurate-preview-box" style="margin-top: var(--space-sm)">
+              <img id="accuratePreviewImage" class="accurate-preview-image" src="" alt="Accurate preview frame">
+              <div id="accuratePreviewPlaceholder" class="accurate-preview-placeholder">
+                Klik <strong>Render Accurate Preview</strong> untuk melihat frame FFmpeg sesuai setting saat ini.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <!-- ── Submit ── -->
+      <div class="actions-row">
+        <button type="submit" class="btn btn-primary btn-block" id="btnSubmit">
+          🚀 Process Video
+        </button>
+      </div>
+    </form>
+
+    <!-- ── Runtime Status ── -->
+    <div class="status-box" id="runtimeStatus" style="display:none; margin-top: var(--space-lg)"></div>
+
+    <div class="card" id="jobProgressCard" style="display:none; margin-top: var(--space-md)">
+      <div class="card-title"><span class="icon">🧵</span> Background Job</div>
+      <div class="job-progress">
+        <div class="bar-track"><div class="bar-fill" id="jobProgressFill"></div></div>
+        <div class="job-text" id="jobProgressText">Queued</div>
+      </div>
+    </div>
+
+    <div class="card" id="jobLogsCard" style="display:none; margin-top: var(--space-md)">
+      <div class="card-title"><span class="icon">📋</span> Process Log</div>
+      <div class="log-viewer" id="jobLogsViewer">Log sistem akan tampil di sini...</div>
+    </div>
+
+    <!-- ── Results ── -->
+    <div class="card" style="margin-top: var(--space-lg)">
+      <div class="card-title"><span class="icon">🎬</span> Generated Clips History</div>
+      <div class="result-grid" id="historyGrid">
+        {% if history %}
+          {% for item in history %}
+          <div class="result-item">
+            <video controls preload="metadata" playsinline>
+              <source src="{{ url_for('serve_clip', filename=item.filename) }}" type="video/mp4">
+            </video>
+            <div class="result-info">
+              <div class="filename">{{ item.filename }}</div>
+              <div class="result-actions">
+                <a href="{{ url_for('serve_clip', filename=item.filename) }}" download class="btn-download">⬇ Download MP4</a>
+                <a href="{{ url_for('serve_clip', filename=item.subtitle_filename) }}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">📄 Download SRT</a>
+              </div>
+              {% if item.subtitle_text %}
+              <div class="subtitle-panel">
+                <div class="subtitle-header">Subtitle Text (.srt)</div>
+                <pre class="subtitle-pre">{{ item.subtitle_text }}</pre>
+              </div>
+              {% else %}
+              <div class="subtitle-panel">
+                <div class="subtitle-header">Subtitle Text (.srt)</div>
+                <pre class="subtitle-pre">No subtitle content available.</pre>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="result-empty">No generated clips yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <footer class="app-footer">
+      YT Heatmap Clipper · Using Faster-Whisper & FFmpeg · <a href="https://github.com" target="_blank">GitHub</a>
+    </footer>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  window.OVERLAY_PRESETS = {{ overlay_presets|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% endblock %}

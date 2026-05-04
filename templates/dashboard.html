@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard — YT Heatmap Clipper{% endblock %}
+
+{% block content %}
+  <!-- Page Header -->
+  <header class="app-header" style="margin-bottom: var(--space-xl);">
+    <div class="app-logo">
+      <div class="app-logo-icon" style="font-size: 18px;">D</div>
+      <div>
+        <h1>Dashboard</h1>
+        <span class="tagline">Overview &amp; Activity</span>
+      </div>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Switch theme"></button>
+  </header>
+
+  <!-- Stats Cards -->
+  <div class="form-workbench" style="margin-bottom: var(--space-lg);">
+    <div class="card">
+      <div class="card-title"><span class="icon">📹</span> Total Clips</div>
+      <div style="font-size: 2rem; font-weight: 800; color: var(--accent-primary);">{{ history|length }}</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">Generated clips in library</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">⚡</span> Quick Actions</div>
+      <a href="/workspace" class="btn btn-primary btn-block" style="margin-bottom: var(--space-sm);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon></svg>
+        Open Workspace
+      </a>
+      <a href="/social-account" class="btn btn-secondary btn-block">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+        Manage Social Accounts
+      </a>
+    </div>
+  </div>
+
+  <!-- Recent Clips -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🎬</span> Recent Clips</div>
+    <div id="dashboardHistory">
+      <div class="result-empty">Loading history...</div>
+    </div>
+  </div>
+
+  <footer class="app-footer">
+    YT Heatmap Clipper · Using Faster-Whisper &amp; FFmpeg · <a href="https://github.com" target="_blank">GitHub</a>
+  </footer>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  async function loadDashboardHistory() {
+    try {
+      const response = await fetch('/api/history');
+      const items = await response.json();
+      const container = document.getElementById('dashboardHistory');
+      if (!items || items.length === 0) {
+        container.innerHTML = '<div class="result-empty">No clips generated yet. Head to Workspace to get started.</div>';
+        return;
+      }
+      const recent = items.slice(0, 5);
+      container.innerHTML = recent.map(item => `
+        <div class="result-item" style="margin-bottom: var(--space-sm);">
+          <video src="/clips/${item.filename}" preload="metadata" style="width: 80px; border-radius: var(--radius-sm);"></video>
+          <div class="result-info">
+            <div class="filename">${item.filename}</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${item.created_at || ''}</div>
+          </div>
+          <a href="/clips/${item.filename}" download class="btn-download">Download</a>
+        </div>
+      `).join('');
+    } catch (err) {
+      document.getElementById('dashboardHistory').innerHTML = '<div class="result-empty">Failed to load history.</div>';
+    }
+  }
+  loadDashboardHistory();
+</script>
+{% endblock %}

@@ -5,7 +5,7 @@ import tempfile
 import threading
 from io import BytesIO
 
-from flask import Flask, render_template, request, send_from_directory, abort, jsonify, send_file
+from flask import Flask, render_template, request, send_from_directory, abort, jsonify, send_file, redirect, url_for
 
 import run as clipper
 from job_service import (
@@ -461,10 +461,7 @@ def api_preview_frame():
     )
 
 
-# ── Main page + processing ───────────────────────────────────────────────────
-
-@app.route("/", methods=["GET"])
-def index():
+def _build_default_context():
     overlay_key, overlay_defaults = _resolve_overlay_preset(clipper.DEFAULT_OVERLAY_PRESET)
     data = {
         "url": "",
@@ -485,19 +482,41 @@ def index():
         "preview_time": 12,
         "preview_subtitle_text": "Ini contoh subtitle untuk preview ukuran dan posisi overlay.",
     }
-
     history = build_history_entries()
+    return {
+        "data": data,
+        "history": history,
+        "async_enabled": ASYNC_ENABLED,
+        "subtitle_styles": list(clipper.SUBTITLE_STYLES.keys()),
+        "source_styles": list(clipper.SOURCE_TAG_STYLES.keys()),
+        "quality_presets": clipper.VIDEO_QUALITY_PRESETS,
+        "overlay_presets": clipper.OVERLAY_PRESETS,
+    }
 
-    return render_template(
-        "index.html",
-        data=data,
-        history=history,
-        async_enabled=ASYNC_ENABLED,
-        subtitle_styles=list(clipper.SUBTITLE_STYLES.keys()),
-        source_styles=list(clipper.SOURCE_TAG_STYLES.keys()),
-        quality_presets=clipper.VIDEO_QUALITY_PRESETS,
-        overlay_presets=clipper.OVERLAY_PRESETS,
-    )
+
+# ── Page routes ──────────────────────────────────────────────────────────────
+
+@app.route("/", methods=["GET"])
+def index():
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    ctx = _build_default_context()
+    return render_template("dashboard.html", **ctx)
+
+
+@app.route("/workspace", methods=["GET"])
+def workspace():
+    ctx = _build_default_context()
+    return render_template("workspace.html", **ctx)
+
+
+@app.route("/social-account", methods=["GET"])
+def social_account():
+    ctx = _build_default_context()
+    return render_template("social_account.html", **ctx)
 
 
 if __name__ == "__main__":
