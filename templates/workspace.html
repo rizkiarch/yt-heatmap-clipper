@@ -188,6 +188,38 @@
                 <span class="slider-value" id="subtitleMaxCharsValue">{{ data.subtitle_max_chars|int }}</span>
               </div>
             </div>
+
+            <!-- Subtitle Translation -->
+            <div class="field-group" style="margin-top: var(--space-md)">
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">Translate Subtitle</div>
+                  <div class="toggle-sublabel">Argos Translate (offline, EN ↔ ID)</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" name="translate_subtitle" id="translateSubtitle" {% if data.translate_subtitle %}checked{% endif %}>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div id="translateOptions" {% if not data.translate_subtitle %}style="display:none"{% endif %}>
+              <div class="field-group" style="margin-top: var(--space-sm)">
+                <label class="field-label">Target Language</label>
+                <div class="preset-grid" id="translateTargetGrid">
+                  <label class="preset-card {% if data.translate_target == 'id' %}selected{% endif %}">
+                    <input type="radio" name="translate_target" value="id" {% if data.translate_target == 'id' %}checked{% endif %}>
+                    <div class="preview-text">🇮🇩</div>
+                    <div class="preset-label">Indonesia</div>
+                  </label>
+                  <label class="preset-card {% if data.translate_target == 'en' %}selected{% endif %}">
+                    <input type="radio" name="translate_target" value="en" {% if data.translate_target == 'en' %}checked{% endif %}>
+                    <div class="preview-text">🇬🇧</div>
+                    <div class="preset-label">English</div>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Source Tag Section -->
@@ -333,6 +365,9 @@
               <div class="result-actions">
                 <a href="{{ url_for('serve_clip', filename=item.filename) }}" download class="btn-download">⬇ Download MP4</a>
                 <a href="{{ url_for('serve_clip', filename=item.subtitle_filename) }}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">📄 Download SRT</a>
+                {% if item.translated_subtitle_filename %}
+                <a href="{{ url_for('serve_clip', filename=item.translated_subtitle_filename) }}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">🌐 Download Translated SRT</a>
+                {% endif %}
               </div>
               {% if item.subtitle_text %}
               <div class="subtitle-panel">

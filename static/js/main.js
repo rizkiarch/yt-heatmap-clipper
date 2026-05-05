@@ -18,6 +18,7 @@ setupCardSelection('qualityGrid');
 setupCardSelection('subtitleGrid');
 setupCardSelection('sourceGrid');
 setupCardSelection('overlayPresetGrid');
+setupCardSelection('translateTargetGrid');
 
 const overlayPresetInput = document.getElementById('overlayPresetInput');
 const overlayPresetGrid = document.getElementById('overlayPresetGrid');
@@ -74,6 +75,13 @@ document.getElementById('useSourceTag').addEventListener('change', function() {
   document.getElementById('sourceOptions').style.display = this.checked ? '' : 'none';
   updateOverlaySimulator();
 });
+
+const translateSubtitleEl = document.getElementById('translateSubtitle');
+if (translateSubtitleEl) {
+  translateSubtitleEl.addEventListener('change', function() {
+    document.getElementById('translateOptions').style.display = this.checked ? '' : 'none';
+  });
+}
 
 function updateSliderLabels() {
   const intervalSlider = document.getElementById('sourceInterval');
@@ -466,7 +474,12 @@ function renderHistoryItem(item) {
   const mp4 = item.filename;
   const srt = item.subtitle_filename || mp4.replace(/\.mp4$/i, '.srt');
   const subtitleText = item.subtitle_text || 'No subtitle content available.';
+  const translatedSrt = item.translated_subtitle_filename || '';
   const editableTitle = getEditableTitle(item);
+
+  const translatedBtn = translatedSrt
+    ? `<a data-busy-lock="1" href="/clips/${encodeURIComponent(translatedSrt)}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">🌐 Download Translated SRT</a>`
+    : '';
 
   return `
     <div class="result-item">
@@ -478,6 +491,7 @@ function renderHistoryItem(item) {
         <div class="result-actions">
           <a data-busy-lock="1" href="/clips/${encodeURIComponent(mp4)}" download class="btn-download">⬇ Download MP4</a>
           <a data-busy-lock="1" href="/clips/${encodeURIComponent(srt)}" download class="btn-download" style="background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-default);">📄 Download SRT</a>
+          ${translatedBtn}
         </div>
         <div class="result-title-row">
           <input class="result-title-input" type="text" value="${escapeHtml(editableTitle)}" data-title-input="1" data-filename="${escapeHtml(mp4)}">

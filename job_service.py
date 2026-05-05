@@ -197,10 +197,26 @@ def build_history_entries():
             except Exception:
                 subtitle_text = ""
 
+        # Check for translated subtitle file
+        translate_target = entry.get("translate_target", "")
+        translated_srt_name = ""
+        translated_srt_text = ""
+        if translate_target:
+            translated_srt_name = f"{filename.rsplit('.', 1)[0]}_{translate_target}.srt"
+            translated_srt_path = os.path.join(clipper.OUTPUT_DIR, translated_srt_name)
+            if os.path.exists(translated_srt_path):
+                try:
+                    with open(translated_srt_path, "r", encoding="utf-8") as f:
+                        translated_srt_text = f.read()
+                except Exception:
+                    translated_srt_text = ""
+
         row = dict(entry)
         row["file_size"] = os.path.getsize(video_path)
         row["subtitle_filename"] = srt_name
         row["subtitle_text"] = subtitle_text
+        row["translated_subtitle_filename"] = translated_srt_name
+        row["translated_subtitle_text"] = translated_srt_text
         result.append(row)
         seen_filenames.add(filename)
 
@@ -217,10 +233,19 @@ def delete_history_entry(filename):
 
     srt_path = os.path.join(clipper.OUTPUT_DIR, filename.rsplit(".", 1)[0] + ".srt")
 
+    # Delete translated subtitle files too
+    base_name = filename.rsplit(".", 1)[0]
+    translated_srt_id = os.path.join(clipper.OUTPUT_DIR, f"{base_name}_id.srt")
+    translated_srt_en = os.path.join(clipper.OUTPUT_DIR, f"{base_name}_en.srt")
+
     if os.path.exists(video_path):
         os.remove(video_path)
     if os.path.exists(srt_path):
         os.remove(srt_path)
+    if os.path.exists(translated_srt_id):
+        os.remove(translated_srt_id)
+    if os.path.exists(translated_srt_en):
+        os.remove(translated_srt_en)
 
     with _MANIFEST_LOCK:
         manifest = _load_manifest()
@@ -274,11 +299,25 @@ def rename_history_entry(filename, new_title):
     old_srt_path = os.path.join(clipper.OUTPUT_DIR, old_srt)
     new_srt_path = os.path.join(clipper.OUTPUT_DIR, new_srt)
 
+    # Prepare translated subtitle rename paths
+    old_srt_id = f"{old_base}_id.srt"
+    new_srt_id = f"{new_filename[:-4]}_id.srt"
+    old_srt_en = f"{old_base}_en.srt"
+    new_srt_en = f"{new_filename[:-4]}_en.srt"
+    old_srt_id_path = os.path.join(clipper.OUTPUT_DIR, old_srt_id)
+    new_srt_id_path = os.path.join(clipper.OUTPUT_DIR, new_srt_id)
+    old_srt_en_path = os.path.join(clipper.OUTPUT_DIR, old_srt_en)
+    new_srt_en_path = os.path.join(clipper.OUTPUT_DIR, new_srt_en)
+
     try:
         if new_filename != filename:
             os.replace(old_video_path, new_video_path)
             if os.path.exists(old_srt_path):
                 os.replace(old_srt_path, new_srt_path)
+            if os.path.exists(old_srt_id_path):
+                os.replace(old_srt_id_path, new_srt_id_path)
+            if os.path.exists(old_srt_en_path):
+                os.replace(old_srt_en_path, new_srt_en_path)
 
         with _MANIFEST_LOCK:
             manifest = _load_manifest()
@@ -337,6 +376,8 @@ def _validate_job_payload(payload):
         "source_tag_position": str(
             payload.get("source_tag_position", overlay_defaults["source_tag_position"])
         ).strip().lower(),
+        "translate_subtitle": bool(payload.get("translate_subtitle", False)),
+        "translate_target": str(payload.get("translate_target", "id")).strip().lower(),
     }
 
     try:
@@ -354,6 +395,8 @@ def _validate_job_payload(payload):
         data["video_quality"] = "medium"
     if data["source_tag_position"] not in {"top-left", "top-right", "bottom-left", "bottom-right"}:
         data["source_tag_position"] = overlay_defaults["source_tag_position"]
+    if data["translate_target"] not in {"id", "en"}:
+        data["translate_target"] = "id"
 
     if not data["url"]:
         raise ValueError("YouTube URL is required")
@@ -443,6 +486,8 @@ def process_job(job_id, payload):
                     data["source_tag_scale"],
                     data["source_tag_position"],
                     progress_callback=job_progress_callback,
+                    translate_subtitle=data["translate_subtitle"],
+                    translate_target=data["translate_target"],
                 )
 
                 if ok:
@@ -472,6 +517,8 @@ def process_job(job_id, payload):
                         "subtitle_max_chars": data["subtitle_max_chars"],
                         "source_tag_scale": data["source_tag_scale"],
                         "source_tag_position": data["source_tag_position"],
+                        "translate_subtitle": data["translate_subtitle"],
+                        "translate_target": data["translate_target"],
                     })
 
                 progress = 20.0 + (clip_index / max(1, target_count)) * 75.0
