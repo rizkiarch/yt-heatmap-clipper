@@ -249,6 +249,46 @@ def get_model_size(model):
     return sizes.get(model, "unknown size")
 
 
+def _get_ytdlp_auth_args():
+    """
+    Build extra yt-dlp CLI args for YouTube authentication/cookies.
+    Detects, in priority order:
+      1. YTDLP_COOKIES_FILE env var or cookies.txt in project root
+      2. YTDLP_COOKIES_FROM_BROWSER env var (chrome/firefox/edge/safari)
+      3. YTDLP_PO_TOKEN + YTDLP_VISITOR_DATA for YouTube PO token bypass
+    Returns a list of extra CLI args.
+    """
+    extra = []
+
+    # 1. Cookies file
+    cookies_file = os.getenv("YTDLP_COOKIES_FILE", "").strip()
+    if not cookies_file:
+        # Auto-detect cookies.txt in project root
+        auto_cookies = os.path.join(os.path.dirname(__file__), "cookies.txt")
+        if os.path.exists(auto_cookies):
+            cookies_file = auto_cookies
+    if cookies_file and os.path.exists(cookies_file):
+        extra.extend(["--cookies", cookies_file])
+        return extra  # cookies file is the strongest method
+
+    # 2. Browser cookies
+    browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER", "").strip().lower()
+    if browser:
+        # yt-dlp supports: chrome, firefox, edge, safari, opera, chromium, etc.
+        extra.extend(["--cookies-from-browser", browser])
+        return extra
+
+    # 3. PO Token + Visitor Data (YouTube-specific)
+    po_token = os.getenv("YTDLP_PO_TOKEN", "").strip()
+    visitor_data = os.getenv("YTDLP_VISITOR_DATA", "").strip()
+    if po_token:
+        extra.extend(["--extractor-args", f"youtube:player_client=web;po_token=web+{po_token}"])
+    if visitor_data:
+        extra.extend(["--extractor-args", f"youtube:player_client=web;visitor_data={visitor_data}"])
+
+    return extra
+
+
 def cek_dependensi(install_whisper=False, update_ytdlp=True):
     """
     Ensure required dependencies are available.
@@ -571,6 +611,7 @@ def download_video_segment(video_id, start, end, output_file):
         "-f",
         "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "-o", output_file,
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
@@ -595,6 +636,7 @@ def get_duration(video_id):
         "-m",
         "yt_dlp",
         "--get-duration",
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
@@ -629,6 +671,7 @@ def get_video_metadata(video_id):
         "--no-playlist",
         "--skip-download",
         "-J",
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
@@ -664,6 +707,7 @@ def get_channel_name(video_id):
         "--no-playlist",
         "--skip-download",
         "-J",
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 

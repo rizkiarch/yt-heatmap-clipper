@@ -604,6 +604,13 @@ function setRuntimeStatus(kind, text) {
     box.classList.add('success');
     box.textContent = '✅ ' + text;
   }
+
+  // Show auth guide if bot detection error detected
+  const authGuide = document.getElementById('ytdlpAuthGuide');
+  if (authGuide) {
+    const isBotError = /bot|sign in|confirm|po_token|cookies/i.test(text || '');
+    authGuide.style.display = isBotError ? '' : 'none';
+  }
 }
 
 let lastJobLogs = '';

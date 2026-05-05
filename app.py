@@ -192,6 +192,7 @@ def _extract_video_stream_url(video_id):
         "-f",
         "bestvideo[height<=1080][ext=mp4]/best[ext=mp4]/best",
         "-g",
+    ] + clipper._get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}",
     ]
     try:
