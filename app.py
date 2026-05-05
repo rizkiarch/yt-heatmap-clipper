@@ -159,6 +159,8 @@ def _build_payload_from_form(form):
             overlay_defaults["source_tag_scale"],
         ),
         "source_tag_position": (form.get("source_tag_position") or overlay_defaults["source_tag_position"]).strip().lower(),
+        "translate_subtitle": form.get("translate_subtitle") == "on",
+        "translate_target": (form.get("translate_target") or "id").strip().lower(),
     }
 
     try:
@@ -176,6 +178,8 @@ def _build_payload_from_form(form):
         payload["video_quality"] = "medium"
     if payload["source_tag_position"] not in {"top-left", "top-right", "bottom-left", "bottom-right"}:
         payload["source_tag_position"] = overlay_defaults["source_tag_position"]
+    if payload["translate_target"] not in {"id", "en"}:
+        payload["translate_target"] = "id"
 
     return payload
 
@@ -559,6 +563,8 @@ def _build_default_context():
         "source_tag_position": overlay_defaults["source_tag_position"],
         "preview_time": 12,
         "preview_subtitle_text": "Ini contoh subtitle untuk preview ukuran dan posisi overlay.",
+        "translate_subtitle": False,
+        "translate_target": "id",
     }
     history = build_history_entries()
     return {

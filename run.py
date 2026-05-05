@@ -7,7 +7,7 @@ import requests
 import shutil
 import time
 from urllib.parse import urlparse, parse_qs
-from functools import wraps
+from functools import wraps, lru_cache
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -870,6 +870,121 @@ def wrap_subtitle_text(text, max_chars_per_line):
     return "\n".join(lines)
 
 
+# ── Subtitle Translation (Argos Translate) ─────────────────────────────────
+
+@lru_cache(maxsize=4)
+def _get_argos_translator(from_lang, to_lang):
+    """Get cached Argos translator for a language pair."""
+    import argostranslate.translate
+    return argostranslate.translate.get_translation_from_codes(from_lang, to_lang)
+
+
+def install_translation_packages():
+    """Download and install Argos language packages for en↔id."""
+    try:
+        import argostranslate.package
+        argostranslate.package.update_package_index()
+        available = argostranslate.package.get_available_packages()
+        installed = argostranslate.package.get_installed_packages()
+
+        for from_code, to_code in [("en", "id"), ("id", "en")]:
+            if any(p.from_code == from_code and p.to_code == to_code for p in installed):
+                continue
+            pkg = next((p for p in available if p.from_code == from_code and p.to_code == to_code), None)
+            if pkg:
+                argostranslate.package.install_from_path(pkg.download())
+                print(f"    Installed translation package {from_code} → {to_code}")
+    except Exception as e:
+        print(f"    Warning: could not install translation packages: {e}")
+
+
+def _parse_srt_file(srt_path):
+    """Parse an SRT file into a list of subtitle entries."""
+    entries = []
+    if not os.path.exists(srt_path):
+        return entries
+
+    with open(srt_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    blocks = re.split(r"\n\s*\n", content.strip())
+    for block in blocks:
+        lines = block.strip().splitlines()
+        if len(lines) < 3:
+            continue
+        # First line is the index number
+        # Second line is the timestamp
+        # Remaining lines are the text
+        index_line = lines[0].strip()
+        if not index_line.isdigit():
+            continue
+        timestamp_line = lines[1].strip()
+        text = "\n".join(lines[2:]).strip()
+        if not text:
+            continue
+        entries.append({
+            "index": int(index_line),
+            "timestamp": timestamp_line,
+            "text": text,
+        })
+    return entries
+
+
+def _write_srt_file(srt_path, entries):
+    """Write subtitle entries to an SRT file."""
+    with open(srt_path, "w", encoding="utf-8") as f:
+        for i, entry in enumerate(entries, start=1):
+            f.write(f"{i}\n")
+            f.write(f"{entry['timestamp']}\n")
+            f.write(f"{entry['text']}\n\n")
+
+
+def translate_srt_file(input_srt, output_srt, target_lang, source_lang="auto"):
+    """
+    Translate an SRT file using Argos Translate.
+    Returns (success: bool, detected_source_lang: str).
+    """
+    try:
+        entries = _parse_srt_file(input_srt)
+        if not entries:
+            return False, ""
+
+        # Detect source language if auto
+        if source_lang == "auto":
+            sample_text = " ".join(e["text"][:100] for e in entries[:5])
+            # Whisper language codes: 'en', 'id', etc.
+            # Argos uses the same ISO codes for these languages
+            detected = sample_text  # Argos doesn't have auto-detect; use the sample as-is
+            # Since Whisper already detects, caller should pass source_lang
+            # If truly auto, we try both directions and pick best
+            source_lang = "en"  # default assumption; caller should override
+
+        # Skip if source == target
+        if source_lang == target_lang:
+            shutil.copy2(input_srt, output_srt)
+            return True, source_lang
+
+        translator = _get_argos_translator(source_lang, target_lang)
+        if translator is None:
+            print(f"  Translation package {source_lang} → {target_lang} not found.")
+            return False, source_lang
+
+        translated_entries = []
+        for entry in entries:
+            translated_text = translator.translate(entry["text"])
+            translated_entries.append({
+                "index": entry["index"],
+                "timestamp": entry["timestamp"],
+                "text": translated_text,
+            })
+
+        _write_srt_file(output_srt, translated_entries)
+        return True, source_lang
+    except Exception as e:
+        print(f"  Failed to translate subtitle: {e}")
+        return False, source_lang
+
+
 def build_subtitle_force_style(style_key, font_size=None, bottom_margin=None):
     """Build subtitle force_style string from preset + per-job overrides."""
     base_style = SUBTITLE_STYLES.get(style_key, SUBTITLE_STYLES["modern"])
@@ -944,20 +1059,22 @@ def _normalize_subtitle_segments(segments):
 def generate_subtitle(video_file, subtitle_file, max_chars_per_line=30):
     """
     Generate subtitle file using Faster-Whisper for the given video.
-    Returns True if successful, False otherwise.
+    Auto-detects the spoken language. Returns (success, detected_language).
     """
     try:
         from faster_whisper import WhisperModel
-        
+
         print(f"  Loading Faster-Whisper model '{WHISPER_MODEL}'...")
         print(f"  (If this is first time, downloading ~{get_model_size(WHISPER_MODEL)}...)")
-        # Use int8 for CPU efficiency, or "float16" for GPU
         model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-        
+
         print("  ✅ Model loaded. Transcribing audio (4-5x faster than standard Whisper)...")
-        segments, info = model.transcribe(video_file, language="id")
+        # Let Whisper auto-detect language instead of hardcoding "id"
+        segments, info = model.transcribe(video_file)
+        detected_language = (info.language or "en").strip().lower()
+        print(f"  Detected language: {detected_language}")
         normalized_segments = _normalize_subtitle_segments(list(segments))
-        
+
         # Generate SRT format
         print("  Generating subtitle file...")
         with open(subtitle_file, "w", encoding="utf-8") as f:
@@ -965,15 +1082,15 @@ def generate_subtitle(video_file, subtitle_file, max_chars_per_line=30):
                 start_time = format_timestamp(segment["start"])
                 end_time = format_timestamp(segment["end"])
                 text = wrap_subtitle_text(segment["text"], max_chars_per_line)
-                
+
                 f.write(f"{i}\n")
                 f.write(f"{start_time} --> {end_time}\n")
                 f.write(f"{text}\n\n")
-        
-        return True
+
+        return True, detected_language
     except Exception as e:
         print(f"  Failed to generate subtitle: {str(e)}")
-        return False
+        return False, "en"
 
 
 def format_timestamp(seconds):
@@ -1007,6 +1124,8 @@ def proses_satu_clip(
     source_tag_scale=0.88,
     source_tag_position="top-right",
     progress_callback=None,
+    translate_subtitle=False,
+    translate_target="id",
 ):
     """
     Download, crop, and export a single vertical clip
@@ -1028,6 +1147,8 @@ def proses_satu_clip(
         source_tag_scale: source tag size multiplier
         source_tag_position: source tag corner position
         progress_callback: optional callback function(progress_percent, message) for live updates
+        translate_subtitle: whether to translate the subtitle to another language
+        translate_target: target language code for translation ("id" or "en")
     """
     def report_progress(percent, message):
         if progress_callback:
@@ -1087,8 +1208,10 @@ def proses_satu_clip(
     source_file = f"temp_source_{index}.mp4"
     masked_file = f"temp_masked_{index}.mp4"
     subtitle_file = f"temp_{index}.srt"
+    translated_subtitle_file = f"temp_{index}_translated.srt"
     output_file = os.path.join(OUTPUT_DIR, f"{base_name}.mp4")
     raw_subtitle_output = os.path.join(OUTPUT_DIR, f"{base_name}.srt")
+    raw_translated_subtitle_output = os.path.join(OUTPUT_DIR, f"{base_name}_{translate_target}.srt")
 
     print(
         f"[Clip {index}] Processing segment "
@@ -1217,9 +1340,34 @@ def proses_satu_clip(
                     report_progress(65, "Subtitle mask skipped")
 
             report_progress(67, "Generating subtitle with AI...")
-            if generate_subtitle(final_input_file, subtitle_file, max_chars_per_line=subtitle_max_chars):
-                report_progress(80, "Subtitle generated")
+            sub_success, detected_lang = generate_subtitle(
+                final_input_file, subtitle_file, max_chars_per_line=subtitle_max_chars
+            )
+            if sub_success:
+                report_progress(80, f"Subtitle generated (detected: {detected_lang})")
 
+                # Determine which SRT to burn: original or translated
+                srt_to_burn = subtitle_file
+                translated_ok = False
+
+                if translate_subtitle:
+                    report_progress(82, "Installing translation packages...")
+                    install_translation_packages()
+
+                    if detected_lang == translate_target:
+                        print(f"  Source language ({detected_lang}) same as target, skipping translation.")
+                    else:
+                        report_progress(84, f"Translating subtitle {detected_lang} → {translate_target}...")
+                        translated_ok, _ = translate_srt_file(
+                            subtitle_file, translated_subtitle_file, translate_target, detected_lang
+                        )
+                        if translated_ok:
+                            srt_to_burn = translated_subtitle_file
+                            report_progress(86, "Subtitle translated")
+                        else:
+                            report_progress(86, "Translation failed, using original subtitle")
+
+                # Save raw subtitle(s)
                 if SAVE_RAW_SUBTITLE and os.path.exists(subtitle_file):
                     try:
                         shutil.copy2(subtitle_file, raw_subtitle_output)
@@ -1227,8 +1375,15 @@ def proses_satu_clip(
                     except Exception as copy_error:
                         print(f"  Failed to save raw subtitle: {str(copy_error)}")
 
-                report_progress(85, "Burning subtitle to video...")
-                abs_subtitle_path = os.path.abspath(subtitle_file)
+                if translated_ok and os.path.exists(translated_subtitle_file):
+                    try:
+                        shutil.copy2(translated_subtitle_file, raw_translated_subtitle_output)
+                        print(f"  Translated subtitle saved: {raw_translated_subtitle_output}")
+                    except Exception as copy_error:
+                        print(f"  Failed to save translated subtitle: {str(copy_error)}")
+
+                report_progress(88, "Burning subtitle to video...")
+                abs_subtitle_path = os.path.abspath(srt_to_burn)
                 subtitle_path = abs_subtitle_path.replace("\\", "/").replace(":", "\\:")
 
                 sub_force_style = build_subtitle_force_style(
@@ -1255,8 +1410,13 @@ def proses_satu_clip(
                     report_progress(95, "Subtitle burn failed, using raw video")
                     os.rename(final_input_file, output_file)
 
-                if os.path.exists(subtitle_file):
-                    os.remove(subtitle_file)
+                # Cleanup temp subtitle files
+                for f in [subtitle_file, translated_subtitle_file]:
+                    if os.path.exists(f):
+                        try:
+                            os.remove(f)
+                        except Exception:
+                            pass
             else:
                 print("  Subtitle generation failed, continuing without subtitle...")
                 report_progress(95, "Subtitle generation failed")
@@ -1271,7 +1431,7 @@ def proses_satu_clip(
 
     except subprocess.CalledProcessError as e:
         # Cleanup temp files
-        for f in [temp_file, cropped_file, source_file, masked_file, subtitle_file]:
+        for f in [temp_file, cropped_file, source_file, masked_file, subtitle_file, translated_subtitle_file]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -1283,7 +1443,7 @@ def proses_satu_clip(
         return False
     except Exception as e:
         # Cleanup temp files
-        for f in [temp_file, cropped_file, source_file, masked_file, subtitle_file]:
+        for f in [temp_file, cropped_file, source_file, masked_file, subtitle_file, translated_subtitle_file]:
             if os.path.exists(f):
                 try:
                     os.remove(f)
