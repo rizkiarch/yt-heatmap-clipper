@@ -611,6 +611,7 @@ def download_video_segment(video_id, start, end, output_file):
         "-f",
         "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "-o", output_file,
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
@@ -635,6 +636,7 @@ def get_duration(video_id):
         "-m",
         "yt_dlp",
         "--get-duration",
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
@@ -669,6 +671,7 @@ def get_video_metadata(video_id):
         "--no-playlist",
         "--skip-download",
         "-J",
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
@@ -704,6 +707,7 @@ def get_channel_name(video_id):
         "--no-playlist",
         "--skip-download",
         "-J",
+    ] + _get_ytdlp_auth_args() + [
         f"https://youtu.be/{video_id}"
     ]
 
