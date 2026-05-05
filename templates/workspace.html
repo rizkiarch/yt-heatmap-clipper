@@ -339,37 +339,56 @@
       <div class="card-title"><span class="icon">🔐</span> YouTube Authentication</div>
       <p style="color: var(--text-muted); margin-bottom: var(--space-md);">
         YouTube memblokir download tanpa login. Jika Anda melihat error <code>"Sign in to confirm you're not a bot"</code>,
-        berikut 3 cara untuk mengatasinya (dari yang paling direkomendasikan):
+        berikut 3 cara untuk mengatasinya. Panduan berikut mengikuti
+        <a href="https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp" target="_blank">official yt-dlp FAQ</a>:
       </p>
 
       <div class="field-group">
-        <div style="font-weight: 600; margin-bottom: var(--space-xs);"><span class="icon">1️⃣</span> Cookies dari Browser (Paling Direkomendasikan)</div>
+        <div style="font-weight: 600; margin-bottom: var(--space-xs);"><span class="icon">1️⃣</span> Cookies dari Browser (Paling Direkomendasikan untuk YouTube)</div>
         <p style="color: var(--text-muted); font-size: 0.85rem;">
-          1. Install ekstensi Chrome <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahblladkfeehkjdjjhclmfgfl" target="_blank">Get cookies.txt LOCALLY</a><br>
-          2. Buka <a href="https://www.youtube.com" target="_blank">youtube.com</a> dan pastikan Anda sudah login<br>
-          3. Klik ikon ekstensi → Export → pilih <strong>Netscape format</strong> → simpan sebagai <code>cookies.txt</code> di folder project ini<br>
-          4. Restart aplikasi dan coba lagi
+          1. Buka browser dalam mode <strong>Incognito / Private Window</strong><br>
+          2. Login ke <a href="https://www.youtube.com" target="_blank">youtube.com</a> dengan akun Anda<br>
+          3. Buka <strong>HANYA</strong> tab ini: <a href="https://www.youtube.com/robots.txt" target="_blank">youtube.com/robots.txt</a> — pastikan tidak ada tab YouTube lain yang terbuka<br>
+          4. Install ekstensi Chrome <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahblladkfeehkjdjjhclmfgfl" target="_blank">Get cookies.txt LOCALLY</a>
+          (atau <a href="https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/" target="_blank">cookies.txt untuk Firefox</a>)<br>
+          5. Klik ikon ekstensi → Export <strong>HANYA youtube.com</strong> → pilih <strong>Netscape format</strong> → simpan sebagai <code>cookies.txt</code> di folder project ini<br>
+          6. <strong>Tutup incognito window secara permanen</strong> agar session tidak pernah dibuka ulang<br>
+          7. Restart aplikasi dan coba lagi
+        </p>
+        <p style="color: #d97706; font-size: 0.8rem; margin-top: var(--space-xs);">
+          ⚠️ <strong>Peringatan:</strong> Menggunakan akun YouTube dengan yt-dlp berisiko banned (sementara atau permanen).
+          Pastikan cookies file format <strong>Mozilla/Netscape</strong> dan diawali <code># HTTP Cookie File</code>.
+          Jika mendapat <code>HTTP Error 400</code>, kemungkinan line endings salah (Windows butuh CRLF, Linux/Mac butuh LF).
         </p>
       </div>
 
       <div class="field-group">
-        <div style="font-weight: 600; margin-bottom: var(--space-xs);"><span class="icon">2️⃣</span> Baca Cookies Langsung dari Browser</div>
+        <div style="font-weight: 600; margin-bottom: var(--space-xs);"><span class="icon">2️⃣</span> Baca Cookies Langsung dari Browser (Lebih Mudah, Kurang Aman)</div>
         <p style="color: var(--text-muted); font-size: 0.85rem;">
           Atur environment variable di file <code>.env</code>:
           <code>YTDLP_COOKIES_FROM_BROWSER=chrome</code> (atau <code>firefox</code>, <code>edge</code>, <code>safari</code>)<br>
           Pastikan browser sudah login ke YouTube sebelum menjalankan aplikasi.
+          Untuk Flatpak Chrome: <code>YTDLP_COOKIES_FROM_BROWSER=chrome:~/.var/app/com.google.Chrome/</code>
+        </p>
+        <p style="color: #d97706; font-size: 0.8rem; margin-top: var(--space-xs);">
+          ⚠️ Untuk YouTube, method cookies file (no.1) lebih direkomendasikan karena
+          <code>--cookies-from-browser</code> bisa tidak membaca session cookies dari incognito.
         </p>
       </div>
 
       <div class="field-group">
-        <div style="font-weight: 600; margin-bottom: var(--space-xs);"><span class="icon">3️⃣</span> PO Token + Visitor Data</div>
+        <div style="font-weight: 600; margin-bottom: var(--space-xs);"><span class="icon">3️⃣</span> PO Token + Visitor Data (Tidak Direkomendasikan)</div>
         <p style="color: var(--text-muted); font-size: 0.85rem;">
-          Jika 2 cara di atas tidak berhasil:<br>
+          Method ini kurang stabil dan hanya sebagai fallback terakhir:<br>
           1. Buka <a href="https://www.youtube.com" target="_blank">youtube.com</a> di browser, tekan <strong>F12</strong> → tab <strong>Network</strong><br>
-          2. Mainkan video apa saja, cari request yang namanya <code>player</code><br>
+          2. Mainkan video apa saja, cari request POST yang namanya <code>player</code><br>
           3. Di payload, cari <code>poToken</code> dan <code>visitorData</code><br>
           4. Tambahkan ke <code>.env</code>:
           <code>YTDLP_PO_TOKEN=token_anda</code> dan <code>YTDLP_VISITOR_DATA=data_anda</code>
+        </p>
+        <p style="color: #d97706; font-size: 0.8rem; margin-top: var(--space-xs);">
+          ⚠️ Method ini kurang stabil karena harus skip webpage requests, yang membuat ekstraksi
+          YouTube kurang reliable.
         </p>
       </div>
     </div>
