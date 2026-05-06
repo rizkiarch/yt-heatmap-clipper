@@ -10,7 +10,7 @@ This tool parses YouTube audience engagement markers to detect high-interest mom
 
 ---
 
-## ✨ Features
+## Features
 
 ### Core Features
 - Extracts YouTube **Most Replayed (heatmap)** segments
@@ -19,76 +19,121 @@ This tool parses YouTube audience engagement markers to detect high-interest mom
 - Outputs **9:16 vertical video format** (720x1280)
 - **No YouTube API key required**
 - Supports standard YouTube videos and Shorts
+- Smart fallback when heatmap is unavailable (yt-dlp heatmap, chapters, or timeline intervals)
 
-### Advanced Features
-- **3 Crop Modes**:
-  - **Default**: Center crop from original video
-  - **Split Left**: Top = center content, Bottom = bottom-left (facecam)
-  - **Split Right**: Top = center content, Bottom = bottom-right (facecam)
-- **AI Auto Subtitle** (Faster-Whisper):
-  - 4-5x faster than standard Whisper
-  - Support for Indonesian language (and 99+ languages)
-  - Multiple model sizes: tiny, base, small, medium, large
-  - Automatic transcription and subtitle burning
-  - Customizable subtitle style
+### Crop Modes
+- **Default**: Center crop from original video
+- **Split Left**: Top = center content, Bottom = bottom-left (facecam)
+- **Split Right**: Top = center content, Bottom = bottom-right (facecam)
+- **Blur Center**: 16:9 content centered with blurred top/bottom
 
----
+### AI Auto Subtitle (Faster-Whisper)
+- 4-5x faster than standard Whisper
+- Auto-detects spoken language (99+ languages)
+- Multiple model sizes: tiny, base, small, medium, large-v3
+- Automatic transcription and subtitle burning
+- 5 subtitle style presets: modern, karaoke, minimal, bold, neon
+- Built-in subtitle mask to hide hardcoded source subtitles
+- Optional subtitle translation (e.g. en -> id, id -> en) via Argos Translate
 
-## ⚙️ How It Works
+### Source Tag Overlay
+- Animated sliding source tag showing YouTube channel name
+- 4 style presets: classic, glass, minimal, neon
+- Configurable position: top-left, top-right, bottom-left, bottom-right
+- Adjustable scale and animation interval
 
-1.  **Parse Heatmap Data**: Fetches YouTube watch page and extracts "Most Replayed" markers.
-2.  **Filter Segments**: Identifies high-engagement moments based on score threshold.
-3.  **User Selection**: Interactive menu for crop mode and subtitle preferences.
-4.  **Smart Download**: Downloads only the required time ranges (with padding).
-5.  **Video Processing**:
-    - Scales to 1920px width (maintains aspect ratio).
-    - Applies selected crop mode (center, split-left, or split-right).
-    - Converts to 720x1280 vertical format.
-6.  **AI Transcription** (optional):
-    - Transcribes audio using Faster-Whisper.
-    - Generates SRT subtitle file.
-    - Burns subtitles with customizable style.
-7.  **Export**: Saves optimized MP4 clips ready for social media.
+### Quality & Overlay Presets
+- **Video Quality**: High (1080p), Medium (720p), Fast (720p)
+- **Overlay Presets**: Compact, Professional, Bold
+  - Each preset bundles subtitle font size, bottom margin, max chars per line, and source tag scale
 
 ---
 
-## 🛠️ Requirements
+## How It Works
+
+1. **Parse Heatmap Data**: Fetches YouTube watch page and extracts "Most Replayed" markers.
+2. **Filter Segments**: Identifies high-engagement moments based on score threshold.
+3. **Fallback Strategy**: If heatmap is unavailable, tries yt-dlp heatmap, chapters, or evenly-spaced timeline slices.
+4. **User Selection**: Interactive CLI or Web UI for crop mode, quality, subtitle, source tag, and overlay preset.
+5. **Smart Download**: Downloads only the required time ranges (with padding) using yt-dlp with multiple client fallbacks.
+6. **Video Processing**:
+   - Applies selected crop mode.
+   - Converts to 720x1280 vertical format.
+   - Adds animated source tag overlay (optional).
+   - Applies subtitle mask to hide hardcoded subtitles (optional).
+7. **AI Transcription** (optional):
+   - Transcribes audio using Faster-Whisper.
+   - Optionally translates to target language.
+   - Generates SRT subtitle file and burns subtitles with selected style.
+8. **Export**: Saves optimized MP4 clips ready for social media.
+
+---
+
+## Requirements
 
 - Python **3.8 or higher**
 - **FFmpeg** (must be installed and available in PATH)
+- **JavaScript runtime** (Deno recommended, or Node.js / Bun / QuickJS)
+  - Required since yt-dlp 2025.11.12 for full YouTube support
 - Internet connection
 
-### Python Dependencies:
+### Python Dependencies
 - `requests` - HTTP requests
 - `yt-dlp` - YouTube video downloader
+- `yt-dlp-ejs` - External JS solver for yt-dlp YouTube challenge cipher
 - `faster-whisper` - AI transcription (optional, for subtitles)
+- `flask` + `flask-socketio` - Web UI (optional, for `app.py`)
+- `argostranslate` - Subtitle translation (optional)
 
-### Hardware Requirements:
+### Hardware Requirements
 - **Minimum**: 2 GB RAM, 1 GB free disk space
 - **Recommended** (with subtitle): 4 GB RAM, 2 GB free disk space
 - Internet bandwidth: ~10 MB/s for smooth downloading
 
 ---
 
-## 🚀 Installation
+## Installation
 
-### Clone Repository
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/0xACAB666/yt-heatmap-clipper.git
 cd yt-heatmap-clipper
 ```
 
-### Install Python Dependencies
+### 2. Install JavaScript Runtime (Required)
+
+yt-dlp requires an external JS runtime to solve YouTube cipher challenges.
+
+**Deno (Recommended)**
+```bash
+# Linux/macOS
+curl -fsSL https://deno.land/install.sh | sh
+
+# Windows (PowerShell)
+irm https://deno.land/install.ps1 | iex
+```
+
+**Node.js (Alternative)**
+```bash
+# Via package manager or https://nodejs.org/
+```
+
+Verify installation:
+```bash
+deno --version   # or node --version
+```
+
+### 3. Install Python Dependencies
 
 **Basic installation** (without subtitle support):
 ```bash
-pip install requests yt-dlp
+pip install requests yt-dlp yt-dlp-ejs
 ```
 
-**Full installation** (with AI subtitle support):
+**Full installation** (with AI subtitle + Web UI):
 ```bash
-pip install requests yt-dlp faster-whisper
+pip install requests yt-dlp yt-dlp-ejs faster-whisper flask flask-socketio python-dotenv
 ```
 
 Or use requirements file if available:
@@ -96,61 +141,87 @@ Or use requirements file if available:
 pip install -r requirements.txt
 ```
 
-### Install FFmpeg
+### 4. Install FFmpeg
 
 FFmpeg is the core engine for video processing and **must** be installed.
 
-#### 🪟 Windows
-
+**Windows**
 ```bash
 1. Download from https://ffmpeg.org/download.html
-2. Extract to `C:\ffmpeg`
-3. Add `C:\ffmpeg\bin` to system PATH
+2. Extract to C:\ffmpeg
+3. Add C:\ffmpeg\bin to system PATH
 4. Restart terminal
 ```
-#### 🍎 macOS
+
+**macOS**
 ```bash
 brew install ffmpeg
 ```
 
-#### 🐧 Linux
+**Linux**
 ```bash
 sudo apt update && sudo apt install ffmpeg
 ```
 
-### 🩺 Verify Installation (Optional)
+### 5. Verify Installation
 
-We have included a script (`check_setup.py`) to verify if **FFmpeg** and all **Python dependencies** are correctly installed.
-
-Simply run:
+Run the included setup checker:
 
 ```bash
 python check_setup.py
 ```
 
 **Expected Output:**
-If your environment is ready, you should see green checkmarks like this:
-
 ```text
 ✅ FFmpeg is installed and recognized.
 ✅ Library 'requests' is installed.
 ✅ Library 'yt_dlp' is installed.
+✅ Library 'yt-dlp-ejs' is installed.
+✅ JavaScript runtime found: deno
 ✅ Library 'faster_whisper' is installed.
 ```
 
 ---
 
-## 📖 Usage
+## Usage
 
-### Basic Usage
+### CLI Usage
 
 ```bash
 python run.py
 ```
 
+The script will guide you through an interactive setup:
+
+1. **Select Crop Mode** (1-4):
+   - `1` - Default (center crop)
+   - `2` - Split 1 (top: center, bottom: bottom-left facecam)
+   - `3` - Split 2 (top: center, bottom: bottom-right facecam)
+   - `4` - Blur Center (16:9 center with blurred top/bottom)
+
+2. **Select Video Quality**:
+   - `high` - 1080p, slow preset, CRF 18
+   - `medium` - 720p, medium preset, CRF 23
+   - `fast` - 720p, ultrafast preset, CRF 28
+
+3. **Source Tag Overlay** (y/n):
+   - Configure animation interval, style (classic/glass/minimal/neon), and position.
+
+4. **Auto Subtitle** (y/n):
+   - Select model (tiny/base/small/medium/large-v3).
+   - Select subtitle style (modern/karaoke/minimal/bold/neon).
+   - Optionally translate subtitle to another language.
+
+5. **Select Overlay Preset** (compact/professional/bold):
+   - Bundles subtitle font size, bottom margin, max chars per line, and source tag scale.
+
+6. **Enter YouTube URL**.
+
+7. **Processing**.
+
 ### Local Web Usage
 
-You can run the tool from a local website (browser UI):
+Run the browser-based UI:
 
 ```bash
 python app.py
@@ -164,72 +235,89 @@ http://127.0.0.1:5000
 
 From the web UI you can:
 - Input YouTube URL
-- Select crop mode
-- Enable/disable auto subtitle
-- View process logs and generated files
+- Select crop mode, quality, and overlay preset
+- Enable/disable auto subtitle and source tag
+- Preview frames with live subtitle and source tag overlay
+- Submit background jobs and watch real-time progress via WebSocket
+- View generated clips and download history
 
-### Interactive Workflow
-
-The script will guide you through an interactive setup:
-
-1.  **Select Crop Mode** (1-3):
-    - `1` - Default (center crop)
-    - `2` - Split 1 (top: center, bottom: bottom-left facecam)
-    - `3` - Split 2 (top: center, bottom: bottom-right facecam)
-
-2.  **Enable Auto Subtitle** (y/n):
-    - `y` - Generate AI-powered subtitles
-    - `n` - Skip subtitle generation
-
-3.  **Enter YouTube URL**: Paste the link.
-
-4.  **Processing**: The script takes over from here.
-
-### 💻 Example Session
+### Example Session
 
 ```text
 === Crop Mode ===
 1. Default (center crop)
 2. Split 1 (top: center, bottom: bottom-left (facecam))
 3. Split 2 (top: center, bottom: bottom-right (facecam))
+4. Blur Center (16:9 center with blurred top/bottom)
 
-Select crop mode (1-3): 3
-Selected: Split crop (bottom-right facecam)
+Select crop mode (1-4): 4
+Selected: Blur center (16:9 center with blurred top/bottom)
+
+=== Video Quality ===
+high. High (1080p)
+medium. Medium (720p)
+fast. Fast (720p)
+Select quality preset (default medium): medium
+Selected quality: Medium (720p)
+
+=== Source Tag Overlay ===
+Show animated source label (YouTube + channel)? (y/n): y
+Animation interval in seconds (default 30): 30
+
+Available source tag styles: classic, glass, minimal, neon
+Select source tag style (default classic): classic
+Source tag enabled (interval: 30.0s, style: classic)
 
 === Auto Subtitle ===
-Available model: tiny (~75 MB)
+Available model: large-v3 (~2.9 GB)
 Add auto subtitle using Faster-Whisper? (y/n): y
-✅ Subtitle enabled (Model: tiny, Bahasa Indonesia)
 
-✅ Faster-Whisper package installed.
-✅ Model 'tiny' already cached and ready.
+Available subtitle styles: modern, karaoke, minimal, bold, neon
+Select subtitle style (default modern): modern
+Translate subtitle? (y/n): n
+Subtitle enabled (style: modern, translate: False)
 
-Link YT: [https://www.youtube.com/watch?v=dQw4w9WgXcQ](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
-Reading YouTube heatmap data...
+=== Overlay Preset ===
+compact. Compact
+professional. Professional
+bold. Bold
+Select overlay preset (default compact): compact
+Selected overlay: Compact
+
+YouTube Link: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+Reading video metadata...
+Source label channel: Rick Astley
 Found 6 high-engagement segments.
 Processing clips with 10s pre-padding and 10s post-padding.
+Clip duration target: min 60s, max 160s
+Using crop mode: Blur center (16:9 center with blurred top/bottom)
 [Clip 1] Processing segment (230s - 268s, padding 10s)
-  Cropping video...
-  Generating subtitle...
-  ✅ Model loaded. Transcribing audio...
+  Downloading video segment...
+  Video cropped successfully
+  Adding animated source tag...
+  Generating subtitle with AI...
+  Subtitle generated (detected: en)
   Burning subtitle to video...
-Clip successfully generated.
+  Raw subtitle saved: clips/clip_1.srt
+  Clip successfully generated.
+Finished processing. 1 clip(s) successfully saved to 'clips'.
 ```
 
-Generated clips will be saved in the `clips/` directory.
+Generated clips are saved in the `clips/` directory.
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
-You can modify these settings at the top of `run.py`:
+You can modify settings at the top of `run.py` or via environment variables in `.env`.
 
 ### Basic Settings
 ```python
 OUTPUT_DIR = "clips"      # Output directory for generated clips
-MAX_DURATION = 60         # Maximum clip duration (seconds)
-MIN_SCORE = 0.40          # Minimum heatmap score threshold (0.0-1.0)
-MAX_CLIPS = 10            # Maximum number of clips per video
+MAX_DURATION = 160         # Maximum clip duration (seconds)
+MIN_DURATION = 60          # Minimum clip duration (seconds)
+MIN_SCORE = 0.30          # Minimum heatmap score threshold (0.0-1.0)
+MAX_CLIPS = 1             # Maximum clips per video
 PADDING = 10              # Seconds added before and after each segment
 ```
 
@@ -243,8 +331,50 @@ BOTTOM_HEIGHT = 320       # Height for bottom section (facecam) in split mode (p
 ### Subtitle Settings
 ```python
 USE_SUBTITLE = True       # Enable auto subtitle (can be overridden at runtime)
-WHISPER_MODEL = "tiny"    # Whisper model: tiny, base, small, medium, large
+WHISPER_MODEL = "large-v3"   # Whisper model: tiny, base, small, medium, large-v3
+SAVE_RAW_SUBTITLE = True  # Save generated .srt alongside output clip
+MASK_BUILTIN_SUBTITLE = True  # Mask lower area to hide hardcoded source subtitles
 ```
+
+### Source Tag Settings
+```python
+SOURCE_TAG_DEFAULT_INTERVAL = 30.0  # Seconds between each animation cycle
+```
+
+### yt-dlp Download Settings
+Override via environment variables in `.env`:
+
+```bash
+# Override format selector (advanced)
+YTDLP_FORMAT=best
+
+# Max height when YTDLP_FORMAT is not set (default 1080)
+YTDLP_MAX_HEIGHT=720
+
+# Cookie-based authentication (recommended for age-restricted videos)
+YTDLP_COOKIES_FILE=cookies.txt
+# OR use browser cookies
+YTDLP_COOKIES_FROM_BROWSER=chrome
+
+# PO Token + Visitor Data (YouTube-specific bypass)
+YTDLP_PO_TOKEN=your_token_here
+YTDLP_VISITOR_DATA=your_visitor_data_here
+
+# Network timeout (seconds) — increase for slow/unstable connections (default 30)
+YTDLP_SOCKET_TIMEOUT=60
+
+# Extractor retries — increase if YouTube is flaky (default 3)
+YTDLP_EXTRACTOR_RETRIES=5
+
+# Proxy configuration — useful behind corporate firewall/VPN
+YTDLP_PROXY=http://proxy:port
+```
+
+Notes:
+- `YTDLP_FORMAT` takes priority over `YTDLP_MAX_HEIGHT`.
+- If you see "Requested format is not available", ensure you have a JS runtime (Deno/Node) installed and `yt-dlp-ejs` is up to date.
+- If you get "Read timed out" errors, increase `YTDLP_SOCKET_TIMEOUT` and `YTDLP_EXTRACTOR_RETRIES`.
+- Cookies are the strongest authentication method for restricted videos.
 
 ### Whisper Model Comparison
 
@@ -260,80 +390,53 @@ WHISPER_MODEL = "tiny"    # Whisper model: tiny, base, small, medium, large
 
 ---
 
-## 📂 Output
+## Output
 
 ### Video Specifications
 - **Format**: MP4 (H.264 video + AAC audio)
 - **Resolution**: 720x1280 (9:16 vertical)
-- **Video Codec**: libx264, CRF 26, ultrafast preset
+- **Video Codec**: libx264, CRF 18-28 (depends on quality preset)
 - **Audio Codec**: AAC, 128 kbps
-- **Subtitle**: Burned-in (if enabled), white text with black outline
+- **Subtitle**: Burned-in (if enabled), style depends on preset
 
 ### File Naming
 ```text
 clips/
 ├── clip_1.mp4
 ├── clip_1.srt
+├── clip_1_id.srt       # translated subtitle (if translation enabled)
 ├── clip_2.mp4
 ├── clip_2.srt
-└── clip_3.mp4
+└── ...
 ```
 
-When subtitle is enabled, raw subtitle `.srt` files are saved alongside clips.
+When subtitle is enabled, raw `.srt` files are saved alongside clips.
 
 ---
 
-## 📐 Visualization
+## Troubleshooting
 
-### Mode 1: Default (Center Crop)
-Best for Vlogs, Podcasts, or general videos.
-**Output Resolution:** 720 x 1280 px.
+### "Requested format is not available"
+This error means yt-dlp cannot find any downloadable format for the video. Common causes:
 
-```text
-[ Original 16:9 ]             [ Output 9:16 ]
-┌───────────────────────┐     ┌───────────┐
-│           │           │     │           │
-│           │           │     │           │
-│        CONTENT        │ ──► │  CONTENT  │ ↕ 1280px
-│           │           │     │           │
-│           │           │     │           │
-└───────────────────────┘     └───────────┘
-        (Center)
-```
+1. **Missing JS runtime** (most common since 2025.11.12):
+   - Install Deno: `curl -fsSL https://deno.land/install.sh | sh`
+   - Or install Node.js from https://nodejs.org/
+   - Verify with `deno --version` or `node --version`
 
-### Mode 2: Split Left (Gaming/Reaction)
-Best for streamers with **Facecam on the Bottom-Left**.
-**Output Resolution:** 720 x 1280 px.
+2. **yt-dlp-ejs outdated**:
+   - Run `pip install -U yt-dlp yt-dlp-ejs`
+   - Restart the script after updating
 
-```text
-[ Original 16:9 ]             [ Output 9:16 ]
-┌───────────────────────┐     ┌───────────┐
-│           │           │     │  CONTENT  │ ↕ 960px
-│        CONTENT        │ ──► │ (Center)  │
-│           │           │     ├───────────┤
-├───┐                   │     │  FACECAM  │ ↕ 320px
-│CAM│                   │     │ (Bot-Left)│
-└───┴───────────────────┘     └───────────┘
-```
+3. **Private / age-restricted / region-blocked video**:
+   - The script now detects this early and shows a clear message.
+   - For age-restricted videos, set cookies via `.env`:
+     ```bash
+     YTDLP_COOKIES_FILE=cookies.txt
+     ```
 
-### Mode 3: Split Right (Gaming/Reaction)
-Best for streamers with **Facecam on the Bottom-Right**.
-**Output Resolution:** 720 x 1280 px.
-
-```text
-[ Original 16:9 ]             [ Output 9:16 ]
-┌───────────────────────┐     ┌───────────┐
-│           │           │     │  CONTENT  │ ↕ 960px
-│        CONTENT        │ ──► │ (Center)  │
-│           │           │     ├───────────┤
-│                   ┌───┤     │  FACECAM  │ ↕ 320px
-│                   │CAM│     │(Bot-Right)│
-└───────────────────┴───┘     └───────────┘
-```
-
----
-
-## ❓ Troubleshooting
+4. **Live stream**:
+   - Live streams are not supported for clipping. The script will report this explicitly.
 
 ### FFmpeg not found
 - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html), add `bin` folder to PATH.
@@ -342,17 +445,18 @@ Best for streamers with **Facecam on the Bottom-Right**.
 
 ### No high-engagement segments found
 - Video might not have "Most Replayed" data yet (needs views/engagement).
-- Try lowering `MIN_SCORE` (e.g., from 0.40 to 0.30).
+- Try lowering `MIN_SCORE` (e.g., from 0.30 to 0.25).
 - Check if video URL is correct.
+- The script will automatically fall back to yt-dlp heatmap, chapters, or timeline intervals.
 
 ### Subtitle generation fails
 - Ensure internet connection for first-time model download.
-- Check available RAM (Whisper needs ~500MB-2GB depending on model).
-- Try smaller model: change `WHISPER_MODEL` from `small` to `tiny`.
+- Check available RAM (Whisper needs ~500MB-6GB depending on model).
+- Try smaller model: change `WHISPER_MODEL` from `large-v3` to `tiny`.
 
 ---
 
-## 💡 Tips & Best Practices
+## Tips & Best Practices
 
 ### For Gaming Content
 - Use **Split Right** or **Split Left** mode (facecam in corner).
@@ -360,16 +464,18 @@ Best for streamers with **Facecam on the Bottom-Right**.
 - Use `small` or `base` model for accurate gaming terminology.
 
 ### For Tutorial/Vlog Content
-- Use **Default** center crop mode.
-- Increase `MAX_DURATION = 90` for longer explanations.
+- Use **Default** or **Blur Center** mode.
+- Increase `MAX_DURATION = 160` for longer explanations.
 - Enable subtitles with `tiny` model for fast processing.
 
 ### Subtitle Customization
-Edit line ~368 in `run.py` to customize subtitle style:
+Edit `SUBTITLE_STYLES` in `run.py` to customize subtitle appearance:
 
 ```python
 # Current style (white text, black outline):
-BorderStyle=1,Outline=3,Shadow=2,MarginV=30
+FontName=Arial,FontSize=14,Bold=1,
+PrimaryColour=&HFFFFFF,OutlineColour=&H78000000,
+BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=50
 
 # Large text:
 FontSize=28,Outline=4
@@ -383,7 +489,7 @@ PrimaryColour=&H00FFFF
 
 ---
 
-## 🤝 Contribution
+## Contribution
 
 Contributions are welcome! Feel free to:
 - Report bugs
@@ -393,53 +499,70 @@ Contributions are welcome! Feel free to:
 
 ---
 
-## 📜 License
+## License
+
 MIT License
 
 ---
 
-## 🙏 Credits
+## Credits
+
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - YouTube video downloader
 - **[FFmpeg](https://ffmpeg.org/)** - Video processing
 - **[Faster-Whisper](https://github.com/guillaumekln/faster-whisper)** - AI transcription
 - **[OpenAI Whisper](https://github.com/openai/whisper)** - Speech recognition model
+- **[Argos Translate](https://github.com/argosopentech/argos-translate)** - Open-source translation
+- **[Flask](https://flask.palletsprojects.com/)** - Web framework
+- **[Flask-SocketIO](https://flask-socketio.readthedocs.io/)** - Real-time WebSocket support
 
 ---
 
-## 🌟 Support
+## Support
 
-If you find this tool useful, please **⭐ star this repository!**
+If you find this tool useful, please **star this repository!**
 
 For issues and questions, please open an issue on GitHub.
 
-. Instal pendukung Virtual Environment
+---
+
+# Instal pendukung Virtual Environment
+
 Karena Anda menggunakan Python versi baru (3.12+), pastikan modul venv sudah terinstal di sistem:
-bash
+
+```bash
 sudo apt update
 sudo apt install python3-venv
-Use code with caution.
+```
 
-2. Buat folder lingkungan virtual
-Jalankan perintah ini di dalam folder proyek Anda (/workspace/youtube-heatmap-clipper):
-bash
+## Buat folder lingkungan virtual
+
+Jalankan perintah ini di dalam folder proyek Anda (`/workspace/yt-heatmap-clipper`):
+
+```bash
 python3 -m venv venv
-Use code with caution.
+```
 
-Perintah ini akan membuat folder baru bernama venv yang berisi salinan Python khusus untuk proyek ini.
-3. Aktifkan Virtual Environment
+Perintah ini akan membuat folder baru bernama `venv` yang berisi salinan Python khusus untuk proyek ini.
+
+## Aktifkan Virtual Environment
+
 Anda harus "masuk" ke dalam lingkungan ini sebelum menginstal apa pun:
-bash
+
+```bash
 source venv/bin/activate
-Use code with caution.
+```
 
-Tanda keberhasilannya adalah muncul tulisan (venv) di sebelah kiri kursor terminal Anda.
-4. Instal requirements sekarang
+Tanda keberhasilannya adalah muncul tulisan `(venv)` di sebelah kiri kursor terminal Anda.
+
+## Instal requirements sekarang
+
 Sekarang jalankan kembali perintah Anda. Error "externally-managed-environment" tidak akan muncul lagi:
-bash
+
+```bash
 pip install -r requirements.txt
-Use code with caution.
+```
 
-Catatan Tambahan:
-Setiap kali Anda membuka terminal baru untuk mengerjakan proyek ini, jangan lupa jalankan source venv/bin/activate lagi.
-Jika ingin keluar dari lingkungan virtual, cukup ketik deactivate.
+## Catatan Tambahan
 
+- Setiap kali Anda membuka terminal baru untuk mengerjakan proyek ini, jangan lupa jalankan `source venv/bin/activate` lagi.
+- Jika ingin keluar dari lingkungan virtual, cukup ketik `deactivate`.

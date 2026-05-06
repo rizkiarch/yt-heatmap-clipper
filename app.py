@@ -5,9 +5,12 @@ import tempfile
 import threading
 import json
 from io import BytesIO
-from functools import lru_cache
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 from flask import Flask, render_template, request, send_from_directory, abort, jsonify, send_file, redirect, url_for
+from flask_socketio import SocketIO, emit
+from werkzeug.utils import safe_join
 
 import run as clipper
 from job_service import (
@@ -23,10 +26,11 @@ from job_service import (
 from queue_client import publish_job_message
 
 # WebSocket support for real-time progress updates
-socketio = SocketIO(cors_allowed_origins="*", async_mode="threading")
+CORS_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:5000,http://localhost:5000").split(",")
+socketio = SocketIO(cors_allowed_origins=CORS_ORIGINS, async_mode="threading")
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.urandom(24).hex()
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY") or os.urandom(24).hex()
 
 ASYNC_ENABLED = os.getenv("ASYNC_ENABLED", "1") == "1"
 ASYNC_FALLBACK_SYNC = os.getenv("ASYNC_FALLBACK_SYNC", "1") == "1"
@@ -37,6 +41,7 @@ socketio.init_app(app)
 
 # Store job listeners for WebSocket broadcasts
 job_listeners = {}  # job_id -> list of socket sessions
+job_listeners_lock = threading.Lock()
 
 # WebSocket event handlers
 @socketio.on("connect")
@@ -46,11 +51,12 @@ def handle_connect():
 @socketio.on("disconnect")
 def handle_disconnect():
     # Clean up listener from all jobs
-    for job_id in list(job_listeners.keys()):
-        if request.sid in job_listeners[job_id]:
-            job_listeners[job_id].remove(request.sid)
-            if not job_listeners[job_id]:
-                del job_listeners[job_id]
+    with job_listeners_lock:
+        for job_id in list(job_listeners.keys()):
+            if request.sid in job_listeners[job_id]:
+                job_listeners[job_id].remove(request.sid)
+                if not job_listeners[job_id]:
+                    del job_listeners[job_id]
     print(f"Client disconnected: {request.sid}")
 
 @socketio.on("subscribe_job")
@@ -58,10 +64,11 @@ def handle_subscribe(data):
     """Subscribe to job progress updates"""
     job_id = data.get("job_id")
     if job_id:
-        if job_id not in job_listeners:
-            job_listeners[job_id] = []
-        if request.sid not in job_listeners[job_id]:
-            job_listeners[job_id].append(request.sid)
+        with job_listeners_lock:
+            if job_id not in job_listeners:
+                job_listeners[job_id] = []
+            if request.sid not in job_listeners[job_id]:
+                job_listeners[job_id].append(request.sid)
         # Send current job status immediately
         job = get_job(job_id)
         if job:
@@ -79,23 +86,27 @@ def handle_subscribe(data):
 def handle_unsubscribe(data):
     """Unsubscribe from job progress updates"""
     job_id = data.get("job_id")
-    if job_id and job_id in job_listeners:
-        if request.sid in job_listeners[job_id]:
-            job_listeners[job_id].remove(request.sid)
-            if not job_listeners[job_id]:
-                del job_listeners[job_id]
+    if job_id:
+        with job_listeners_lock:
+            if job_id in job_listeners:
+                if request.sid in job_listeners[job_id]:
+                    job_listeners[job_id].remove(request.sid)
+                    if not job_listeners[job_id]:
+                        del job_listeners[job_id]
 
 def broadcast_job_update(job_id, **fields):
     """Broadcast job update to all subscribed clients"""
-    if job_id not in job_listeners:
-        return
+    with job_listeners_lock:
+        if job_id not in job_listeners:
+            return
+        sids = list(job_listeners.get(job_id, []))
 
     data = {"job_id": job_id}
     for key in ["status", "progress", "message", "error", "logs"]:
         if key in fields:
             data[key] = fields[key]
 
-    for sid in job_listeners.get(job_id, []):
+    for sid in sids:
         try:
             socketio.emit("job_update", data, room=sid)
         except Exception as e:
@@ -136,14 +147,14 @@ def _build_payload_from_form(form):
         "overlay_preset": overlay_preset_key,
         "subtitle_font_size": clipper.clamp_int(
             form.get("subtitle_font_size", overlay_defaults["subtitle_font_size"]),
-            9,
-            24,
+            12,
+            48,
             overlay_defaults["subtitle_font_size"],
         ),
         "subtitle_bottom_margin": clipper.clamp_int(
             form.get("subtitle_bottom_margin", overlay_defaults["subtitle_bottom_margin"]),
-            8,
-            120,
+            20,
+            200,
             overlay_defaults["subtitle_bottom_margin"],
         ),
         "subtitle_max_chars": clipper.clamp_int(
@@ -192,13 +203,15 @@ def _extract_video_stream_url(video_id):
         "-f",
         "bestvideo[height<=1080][ext=mp4]/best[ext=mp4]/best",
         "-g",
-    ] + clipper._get_ytdlp_auth_args() + [
+    ] + clipper._get_ytdlp_auth_args() + clipper._get_ytdlp_network_args() + [
         f"https://youtu.be/{video_id}",
     ]
     try:
-        res = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        res = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
         lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
         return lines[0] if lines else ""
+    except subprocess.TimeoutExpired:
+        return ""
     except Exception:
         return ""
 
@@ -278,14 +291,12 @@ def _build_preview_crop_command(stream_url, crop_mode, seek_seconds, output_file
 
 @app.route("/clips/<path:filename>")
 def serve_clip(filename):
-    # Prevent path traversal and return clear 404 only for truly missing files.
-    if ".." in filename or filename.startswith("/"):
+    # Prevent path traversal using werkzeug's safe_join.
+    if not filename:
         abort(404)
-
-    full_path = os.path.join(clipper.OUTPUT_DIR, filename)
-    if not os.path.exists(full_path):
+    safe_path = safe_join(clipper.OUTPUT_DIR, filename)
+    if safe_path is None or not os.path.exists(safe_path):
         abort(404)
-
     return send_from_directory(clipper.OUTPUT_DIR, filename, as_attachment=False)
 
 
@@ -303,6 +314,8 @@ def api_video_info():
     url = request.args.get("url", "").strip()
     if not url:
         return jsonify({"error": "Missing url parameter"}), 400
+    if len(url) > 2048:
+        return jsonify({"error": "URL too long"}), 400
 
     video_id = clipper.extract_video_id(url)
     if not video_id:
@@ -336,19 +349,22 @@ def api_heatmap():
     url = request.args.get("url", "").strip()
     if not url:
         return jsonify({"error": "Missing url parameter"}), 400
+    if len(url) > 2048:
+        return jsonify({"error": "URL too long"}), 400
 
     video_id = clipper.extract_video_id(url)
     if not video_id:
         return jsonify({"error": "Invalid YouTube URL"}), 400
 
-    heatmap_data = clipper.ambil_most_replayed(video_id)
-    total_duration = clipper.get_duration(video_id)
+    heatmap_data = clipper.fetch_most_replayed(video_id)
+
+    metadata = clipper.get_video_metadata(video_id)
+    total_duration = clipper.get_duration_from_metadata(metadata)
+    if not total_duration:
+        total_duration = clipper.get_duration(video_id)
 
     if not heatmap_data:
-        metadata = clipper.get_video_metadata(video_id)
-        if metadata:
-            total_duration = clipper.get_duration_from_metadata(metadata) or total_duration
-        heatmap_data = clipper.ambil_fallback_segments(video_id, total_duration, metadata)
+        heatmap_data = clipper.fetch_fallback_segments(video_id, total_duration, metadata)
 
     return jsonify({
         "video_id": video_id,
@@ -394,6 +410,17 @@ def api_jobs_submit():
     payload = _build_payload_from_form(request.form)
     if not payload["url"]:
         return jsonify({"error": "YouTube URL is required."}), 400
+    if len(payload["url"]) > 2048:
+        return jsonify({"error": "URL too long"}), 400
+
+    video_id = clipper.extract_video_id(payload["url"])
+    if not video_id:
+        return jsonify({"error": "Invalid YouTube URL."}), 400
+
+    metadata = clipper.get_video_metadata(video_id)
+    available, reason = clipper.check_video_availability(video_id, metadata)
+    if not available:
+        return jsonify({"error": reason}), 400
 
     job_id = create_job(payload)
     mode = "local-thread"
@@ -409,21 +436,15 @@ def api_jobs_submit():
         )
         if queued:
             mode = "rabbitmq"
-        elif ASYNC_FALLBACK_SYNC:
-            _start_local_background_job(job_id, payload)
         else:
-            return jsonify({
-                "error": f"RabbitMQ publish failed: {queue_error}",
-                "job_id": job_id,
-            }), 503
-    else:
-        if ASYNC_FALLBACK_SYNC:
+            print(f"RabbitMQ publish failed: {queue_error}")
             _start_local_background_job(job_id, payload)
+    else:
+        _start_local_background_job(job_id, payload)
 
     return jsonify({
         "job_id": job_id,
         "mode": mode,
-        "queue_error": queue_error,
     }), 202
 
 
@@ -441,12 +462,18 @@ def api_preview_frame():
     payload = _build_payload_from_form(request.form)
     if not payload["url"]:
         return jsonify({"error": "YouTube URL is required."}), 400
+    if len(payload["url"]) > 2048:
+        return jsonify({"error": "URL too long"}), 400
 
     video_id = clipper.extract_video_id(payload["url"])
     if not video_id:
         return jsonify({"error": "Invalid YouTube URL."}), 400
 
     metadata = clipper.get_video_metadata(video_id)
+    available, reason = clipper.check_video_availability(video_id, metadata)
+    if not available:
+        return jsonify({"error": reason}), 400
+
     source_channel = clipper.get_channel_name_from_metadata(metadata) if metadata else "Unknown Channel"
     duration = (clipper.get_duration_from_metadata(metadata) if metadata else None) or clipper.get_duration(video_id)
 
@@ -477,7 +504,9 @@ def api_preview_frame():
 
         cmd_frame = _build_preview_crop_command(stream_url, payload["crop_mode"], seek_seconds, frame_base)
         try:
-            subprocess.run(cmd_frame, check=True, capture_output=True, text=True)
+            subprocess.run(cmd_frame, check=True, capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "Preview generation timed out while capturing frame."}), 504
         except subprocess.CalledProcessError:
             return jsonify({"error": "Failed to capture preview frame from source video."}), 500
 
@@ -500,10 +529,12 @@ def api_preview_frame():
                 frame_source,
             ]
             try:
-                subprocess.run(cmd_source, check=True, capture_output=True, text=True)
+                subprocess.run(cmd_source, check=True, capture_output=True, text=True, timeout=60)
                 current_frame = frame_source
+            except subprocess.TimeoutExpired:
+                print("Warning: source tag overlay timed out, using frame without source tag.")
             except subprocess.CalledProcessError:
-                pass
+                print("Warning: source tag overlay failed, using frame without source tag.")
 
         if payload["use_subtitle"]:
             wrapped = clipper.wrap_subtitle_text(preview_subtitle_text, payload["subtitle_max_chars"])
@@ -517,7 +548,7 @@ def api_preview_frame():
                 font_size=payload["subtitle_font_size"],
                 bottom_margin=payload["subtitle_bottom_margin"],
             )
-            subtitle_path = os.path.abspath(sample_srt).replace("\\", "/").replace(":", "\\:")
+            subtitle_path = sample_srt.replace("\\", "/").replace(":", "\\:")
             cmd_subtitle = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", current_frame,
@@ -527,10 +558,12 @@ def api_preview_frame():
                 frame_subtitle,
             ]
             try:
-                subprocess.run(cmd_subtitle, check=True, capture_output=True, text=True)
+                subprocess.run(cmd_subtitle, check=True, capture_output=True, text=True, timeout=60)
                 current_frame = frame_subtitle
+            except subprocess.TimeoutExpired:
+                print("Warning: subtitle burn timed out, using frame without subtitles.")
             except subprocess.CalledProcessError:
-                pass
+                print("Warning: subtitle burn failed, using frame without subtitles.")
 
         with open(current_frame, "rb") as f:
             image_bytes = f.read()
@@ -605,5 +638,8 @@ def social_account():
 
 
 if __name__ == "__main__":
-    # Use SocketIO run method for WebSocket support
+    # Use SocketIO run method for WebSocket support.
+    # allow_unsafe_werkzeug is acceptable here because this tool is intended
+    # for local development use only. Deploy behind a production WSGI server
+    # (e.g., Gunicorn + gevent/eventlet) for public-facing usage.
     socketio.run(app, host="127.0.0.1", port=5000, debug=False, allow_unsafe_werkzeug=True)

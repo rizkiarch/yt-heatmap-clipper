@@ -15,6 +15,16 @@ MANIFEST_FILE = os.path.join(clipper.OUTPUT_DIR, "manifest.json")
 
 _MANIFEST_LOCK = threading.Lock()
 
+# Allowed filename pattern: only alphanumeric, dash, underscore, dot
+_SAFE_FILENAME_RE = re.compile(r"^[\w\-. ]+$")
+
+
+def _is_safe_filename(name):
+    """Validate filename to prevent path traversal attacks."""
+    if not name or ".." in name or "/" in name or "\\" in name:
+        return False
+    return bool(_SAFE_FILENAME_RE.match(name))
+
 
 def _connect():
     os.makedirs(clipper.OUTPUT_DIR, exist_ok=True)
@@ -224,7 +234,7 @@ def build_history_entries():
 
 
 def delete_history_entry(filename):
-    if not filename or ".." in filename or "/" in filename:
+    if not _is_safe_filename(filename):
         return False, "Invalid filename"
 
     video_path = os.path.join(clipper.OUTPUT_DIR, filename)
@@ -269,7 +279,7 @@ def _next_available_filename(candidate):
 
 
 def rename_history_entry(filename, new_title):
-    if not filename or ".." in filename or "/" in filename:
+    if not _is_safe_filename(filename):
         return False, "Invalid filename", ""
     if not new_title or not str(new_title).strip():
         return False, "New title is required", ""
@@ -351,14 +361,14 @@ def _validate_job_payload(payload):
         "overlay_preset": overlay_preset,
         "subtitle_font_size": clipper.clamp_int(
             payload.get("subtitle_font_size", overlay_defaults["subtitle_font_size"]),
-            9,
-            24,
+            12,
+            48,
             overlay_defaults["subtitle_font_size"],
         ),
         "subtitle_bottom_margin": clipper.clamp_int(
             payload.get("subtitle_bottom_margin", overlay_defaults["subtitle_bottom_margin"]),
-            8,
-            120,
+            20,
+            200,
             overlay_defaults["subtitle_bottom_margin"],
         ),
         "subtitle_max_chars": clipper.clamp_int(
@@ -422,7 +432,7 @@ def process_job(job_id, payload):
         update_job(job_id, status="processing", progress=3.0, message="Checking dependencies", error="")
 
         with redirect_stdout(buffer), redirect_stderr(buffer):
-            clipper.cek_dependensi(
+            clipper.check_dependencies(
                 install_whisper=data["use_subtitle"],
                 update_ytdlp=False,
             )
@@ -444,9 +454,9 @@ def process_job(job_id, payload):
             ) or clipper.get_duration(video_id)
 
             update_job(job_id, progress=14.0, message="Reading heatmap data")
-            heatmap_data = clipper.ambil_most_replayed(video_id)
+            heatmap_data = clipper.fetch_most_replayed(video_id)
             if not heatmap_data:
-                heatmap_data = clipper.ambil_fallback_segments(video_id, total_duration, metadata)
+                heatmap_data = clipper.fetch_fallback_segments(video_id, total_duration, metadata)
 
             if not heatmap_data:
                 raise RuntimeError("No high-engagement segments found and fallback also failed.")
@@ -461,34 +471,52 @@ def process_job(job_id, payload):
             success_count = 0
             target_count = min(len(heatmap_data), clipper.MAX_CLIPS)
 
-            for item in heatmap_data:
+            for idx, item in enumerate(heatmap_data):
                 if success_count >= clipper.MAX_CLIPS:
                     break
 
+                # Delay between clips to avoid YouTube rate-limiting.
+                if idx > 0 and clipper.INTER_CLIP_DELAY > 0:
+                    time.sleep(clipper.INTER_CLIP_DELAY)
+
                 clip_index = success_count + 1
-                ok = clipper.proses_satu_clip(
-                    video_id,
-                    item,
-                    clip_index,
-                    total_duration,
-                    data["crop_mode"],
-                    data["use_subtitle"],
-                    data["use_source_tag"],
-                    source_channel,
-                    data["source_interval"],
-                    data["subtitle_style"],
-                    data["source_style"],
-                    data["video_quality"],
-                    title_for_output or None,
-                    data["subtitle_font_size"],
-                    data["subtitle_bottom_margin"],
-                    data["subtitle_max_chars"],
-                    data["source_tag_scale"],
-                    data["source_tag_position"],
-                    progress_callback=job_progress_callback,
-                    translate_subtitle=data["translate_subtitle"],
-                    translate_target=data["translate_target"],
-                )
+                try:
+                    ok = clipper.process_single_clip(
+                        video_id,
+                        item,
+                        clip_index,
+                        total_duration,
+                        data["crop_mode"],
+                        data["use_subtitle"],
+                        data["use_source_tag"],
+                        source_channel,
+                        data["source_interval"],
+                        data["subtitle_style"],
+                        data["source_style"],
+                        data["video_quality"],
+                        title_for_output or None,
+                        data["subtitle_font_size"],
+                        data["subtitle_bottom_margin"],
+                        data["subtitle_max_chars"],
+                        data["source_tag_scale"],
+                        data["source_tag_position"],
+                        progress_callback=job_progress_callback,
+                        translate_subtitle=data["translate_subtitle"],
+                        translate_target=data["translate_target"],
+                    )
+                except RuntimeError as exc:
+                    err_msg = str(exc)
+                    if "bot check" in err_msg.lower() or "sign in" in err_msg.lower() or "cookies" in err_msg.lower():
+                        print(f"\n⚠️  Stopped early: {err_msg}")
+                        current_progress = 20.0 + (clip_index / max(1, target_count)) * 75.0
+                        update_job(
+                            job_id,
+                            progress=min(95.0, current_progress),
+                            message="Stopped: YouTube bot check detected",
+                            error=err_msg,
+                        )
+                        break
+                    raise
 
                 if ok:
                     success_count += 1

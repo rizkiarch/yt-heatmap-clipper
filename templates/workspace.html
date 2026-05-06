@@ -168,7 +168,7 @@
             <div class="field-group" style="margin-top: var(--space-md)">
               <label class="field-label">Subtitle Size</label>
               <div class="slider-group">
-                <input type="range" class="slider-input" name="subtitle_font_size" id="subtitleFontSize" min="9" max="24" step="1" value="{{ data.subtitle_font_size|int }}">
+                <input type="range" class="slider-input" name="subtitle_font_size" id="subtitleFontSize" min="12" max="48" step="1" value="{{ data.subtitle_font_size|int }}">
                 <span class="slider-value" id="subtitleFontSizeValue">{{ data.subtitle_font_size|int }}px</span>
               </div>
             </div>
@@ -176,7 +176,7 @@
             <div class="field-group">
               <label class="field-label">Bottom Offset</label>
               <div class="slider-group">
-                <input type="range" class="slider-input" name="subtitle_bottom_margin" id="subtitleBottomMargin" min="8" max="120" step="1" value="{{ data.subtitle_bottom_margin|int }}">
+                <input type="range" class="slider-input" name="subtitle_bottom_margin" id="subtitleBottomMargin" min="20" max="200" step="1" value="{{ data.subtitle_bottom_margin|int }}">
                 <span class="slider-value" id="subtitleBottomMarginValue">{{ data.subtitle_bottom_margin|int }}px</span>
               </div>
             </div>
@@ -287,17 +287,19 @@
           <div>
             <div class="preview-stage" id="previewStage">
               <img id="previewBgImage" class="preview-bg-image" src="" alt="Preview background" style="display:none">
+              <div class="preview-crop-overlay" id="previewCropOverlay"></div>
+              <div class="preview-subtitle-mask" id="previewSubtitleMask"></div>
               <div class="preview-source-tag" id="previewSourceTag">
-                <span class="preview-source-accent">▶</span>
+                <span class="preview-source-accent" id="previewSourceAccent">▶</span>
                 <span id="previewSourceText">Source: Channel</span>
               </div>
               <div class="preview-subtitle" id="previewSubtitle" data-style="modern">Contoh subtitle untuk cek ukuran dan posisi.</div>
             </div>
             <div class="preview-caption">
-              Fast Simulator: update instan untuk posisi, ukuran, dan style overlay.
+              Fast Simulator: update instan yang sudah diselaraskan 1:1 dengan FFmpeg render.
             </div>
             <div class="preview-help">
-              Simulator cepat dipakai untuk tuning UI. Gunakan mode Accurate untuk melihat frame FFmpeg yang lebih dekat ke hasil video final.
+              Simulator meniru crop mode, subtitle style, source tag geometry, dan subtitle mask secara real-time. Mode Accurate menjalankan FFmpeg langsung untuk verifikasi pixel-perfect.
             </div>
           </div>
 

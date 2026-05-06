@@ -146,6 +146,9 @@ document.querySelectorAll('input[name="subtitle_style"]').forEach((el) => {
 document.querySelectorAll('input[name="source_style"]').forEach((el) => {
   el.addEventListener('change', updateOverlaySimulator);
 });
+document.querySelectorAll('input[name="crop_mode"]').forEach((el) => {
+  el.addEventListener('change', updateOverlaySimulator);
+});
 
 // Collapsible settings
 const settingsToggle = document.getElementById('settingsToggle');
@@ -256,21 +259,43 @@ function wrapPreviewText(text, maxChars) {
     return clean;
   }
 
-  const words = clean.split(' ');
+  function wrapLongWord(word, maxLen) {
+    const chunks = [];
+    while (word.length > maxLen) {
+      chunks.push(word.slice(0, maxLen));
+      word = word.slice(maxLen);
+    }
+    if (word) {
+      chunks.push(word);
+    }
+    return chunks;
+  }
+
+  const words = [];
+  for (const token of clean.split(' ')) {
+    if (token.length > limit) {
+      words.push(...wrapLongWord(token, limit));
+    } else {
+      words.push(token);
+    }
+  }
+
   const lines = [];
   let current = '';
 
-  words.forEach((word) => {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= limit) {
-      current = next;
-      return;
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
     }
-    if (current) {
-      lines.push(current);
+    const candidate = `${current} ${word}`;
+    if (candidate.length <= limit) {
+      current = candidate;
+      continue;
     }
+    lines.push(current);
     current = word;
-  });
+  }
 
   if (current) {
     lines.push(current);
@@ -287,6 +312,9 @@ function getSelectedRadioValue(name, fallback) {
 function updateOverlaySimulator() {
   const subtitleEl = document.getElementById('previewSubtitle');
   const sourceEl = document.getElementById('previewSourceTag');
+  const sourceAccentEl = document.getElementById('previewSourceAccent');
+  const subtitleMaskEl = document.getElementById('previewSubtitleMask');
+  const cropOverlayEl = document.getElementById('previewCropOverlay');
   if (!subtitleEl || !sourceEl) return;
 
   const useSubtitle = document.getElementById('useSubtitle').checked;
@@ -295,46 +323,110 @@ function updateOverlaySimulator() {
   subtitleEl.style.display = useSubtitle ? '' : 'none';
   sourceEl.style.display = useSourceTag ? '' : 'none';
 
-  const subtitleSize = Number(document.getElementById('subtitleFontSize').value || 12);
-  const subtitleBottom = Number(document.getElementById('subtitleBottomMargin').value || 28);
+  const subtitleSize = Number(document.getElementById('subtitleFontSize').value || 28);
+  const subtitleBottom = Number(document.getElementById('subtitleBottomMargin').value || 72);
   const subtitleMaxChars = Number(document.getElementById('subtitleMaxChars').value || 30);
   const subtitleStyle = getSelectedRadioValue('subtitle_style', 'modern');
   const previewSubtitleInput = document.getElementById('previewSubtitleText');
   const previewSubtitleText = (previewSubtitleInput ? previewSubtitleInput.value : '').trim();
   const fallbackSubtitle = 'Ini contoh subtitle untuk mengecek ukuran, posisi, dan kepadatan baris.';
 
-  subtitleEl.style.fontSize = `${subtitleSize}px`;
-  subtitleEl.style.bottom = `${subtitleBottom}px`;
+  // Scale render pixels (720x1280) down to preview container (280px wide)
+  const PREVIEW_SCALE = 280 / 720;
+  subtitleEl.style.fontSize = `${subtitleSize * PREVIEW_SCALE}px`;
+  subtitleEl.style.bottom = `${subtitleBottom * PREVIEW_SCALE}px`;
   subtitleEl.dataset.style = subtitleStyle;
   subtitleEl.textContent = wrapPreviewText(
     previewSubtitleText || fallbackSubtitle,
     subtitleMaxChars
   );
 
+  // Show subtitle mask when subtitles are enabled
+  if (subtitleMaskEl) {
+    subtitleMaskEl.style.display = useSubtitle ? '' : 'none';
+  }
+
+  // Update crop mode overlay
+  const cropMode = getSelectedRadioValue('crop_mode', 'default');
+  if (cropOverlayEl) {
+    cropOverlayEl.dataset.crop = cropMode;
+  }
+
+  // Source tag geometry: match FFmpeg build_source_tag_filter scaled to preview
+  // FFmpeg uses 720x1280 render coordinates; preview container is 280px wide.
   const sourceScale = Number(document.getElementById('sourceTagScale').value || 1);
   const sourcePos = document.getElementById('sourceTagPosition').value || 'top-left';
   const sourceStyle = getSelectedRadioValue('source_style', 'classic');
 
-  sourceEl.style.transform = `scale(${sourceScale.toFixed(2)})`;
-  sourceEl.style.transformOrigin = sourcePos.includes('right') ? 'top right' : 'top left';
+  // Baseline preview pixels (render value * PREVIEW_SCALE where PREVIEW_SCALE = 280/720)
+  const edgeOffset = 14;
+  const padX = Math.round(10 * sourceScale);
+  const padY = Math.round(7 * sourceScale);
+  const textSize = Math.max(6, Math.round(10.88 * sourceScale));
+  const iconBox = Math.max(10, Math.round(18 * sourceScale));
+  const iconFont = Math.max(6, Math.round(10.2 * sourceScale));
+  const gap = Math.max(3, Math.round(6 * sourceScale));
+  const textBoxWidth = Math.max(101, Math.round(28 * textSize * 0.58));
+  const boxH = Math.max(iconBox + padY * 2, textSize + padY * 2);
+  const boxW = padX * 2 + iconBox + gap + textBoxWidth;
 
-  sourceEl.style.top = sourcePos.includes('top') ? '14px' : 'auto';
-  sourceEl.style.bottom = sourcePos.includes('bottom') ? '14px' : 'auto';
-  sourceEl.style.left = sourcePos.includes('left') ? '14px' : 'auto';
-  sourceEl.style.right = sourcePos.includes('right') ? '14px' : 'auto';
+  const isTop = sourcePos.includes('top');
+  const isLeft = sourcePos.includes('left');
 
+  sourceEl.style.transform = 'none';
+  sourceEl.style.top = isTop ? `${edgeOffset}px` : 'auto';
+  sourceEl.style.bottom = isTop ? 'auto' : `${edgeOffset}px`;
+  sourceEl.style.left = isLeft ? `${edgeOffset}px` : 'auto';
+  sourceEl.style.right = isLeft ? 'auto' : `${edgeOffset}px`;
+  sourceEl.style.padding = `${padY}px ${padX}px`;
+  sourceEl.style.gap = `${gap}px`;
+  sourceEl.style.borderRadius = '4px';
+  sourceEl.style.fontSize = `${textSize}px`;
+  sourceEl.style.maxWidth = `${boxW}px`;
+
+  if (sourceAccentEl) {
+    sourceAccentEl.style.width = `${iconBox}px`;
+    sourceAccentEl.style.height = `${iconBox}px`;
+    sourceAccentEl.style.fontSize = `${iconFont}px`;
+    sourceAccentEl.style.borderRadius = '3px';
+  }
+
+  // Style presets matching FFmpeg SOURCE_TAG_STYLES + drawbox behavior
   if (sourceStyle === 'minimal') {
-    sourceEl.style.background = 'rgba(15, 23, 42, 0.32)';
-    sourceEl.style.borderColor = 'rgba(255, 255, 255, 0.10)';
+    sourceEl.style.background = 'transparent';
+    sourceEl.style.border = 'none';
+    sourceEl.style.backdropFilter = 'none';
+    if (sourceAccentEl) {
+      sourceAccentEl.style.display = 'none';
+    }
   } else if (sourceStyle === 'glass') {
-    sourceEl.style.background = 'rgba(255, 255, 255, 0.2)';
-    sourceEl.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+    sourceEl.style.background = 'rgba(255, 255, 255, 0.15)';
+    sourceEl.style.border = '1px solid rgba(255, 255, 255, 0.25)';
+    sourceEl.style.backdropFilter = 'blur(4px)';
+    if (sourceAccentEl) {
+      sourceAccentEl.style.display = '';
+      sourceAccentEl.style.background = 'rgba(255, 255, 255, 0.60)';
+      sourceAccentEl.style.color = '#fff';
+    }
   } else if (sourceStyle === 'neon') {
     sourceEl.style.background = 'rgba(15, 23, 42, 0.78)';
-    sourceEl.style.borderColor = 'rgba(0, 255, 136, 0.55)';
+    sourceEl.style.border = '1px solid rgba(0, 255, 136, 0.55)';
+    sourceEl.style.backdropFilter = 'none';
+    if (sourceAccentEl) {
+      sourceAccentEl.style.display = '';
+      sourceAccentEl.style.background = 'rgba(0, 255, 136, 0.95)';
+      sourceAccentEl.style.color = '#0f172a';
+    }
   } else {
+    // classic
     sourceEl.style.background = 'rgba(16, 24, 40, 0.75)';
-    sourceEl.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+    sourceEl.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    sourceEl.style.backdropFilter = 'blur(2px)';
+    if (sourceAccentEl) {
+      sourceAccentEl.style.display = '';
+      sourceAccentEl.style.background = 'rgba(239, 68, 68, 0.95)';
+      sourceAccentEl.style.color = '#fff';
+    }
   }
 }
 
